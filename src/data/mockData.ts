@@ -5,13 +5,7 @@ import {
     Event,
     MentorshipConnection,
     DashboardStats,
-    ActivityItem,
-    UserType,
-    UserStatus,
-    JobStatus,
-    ReportStatus,
-    EventStatus,
-    MentorshipStatus
+    ActivityItem
 } from '../types';
 
 export const mockUsers: User[] = [

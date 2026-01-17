@@ -35,18 +35,18 @@ const Signup: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-primary-100 flex items-center justify-center p-4">
-            < div className="w-full max-w-md" >
+            <div className="w-full max-w-md">
                 {/* Logo and Title */}
-                < div className="text-center mb-8" >
-                    <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-500 rounded-2xl mb-4">
-                        <span className="text-3xl font-bold text-white">CB</span>
+                <div className="text-center mb-8">
+                    <div className="inline-flex items-center justify-center w-20 h-20 mb-4">
+                        <img src="/logo.png" alt="CollabBot Logo" className="w-full h-full object-contain" />
                     </div>
                     <h1 className="text-3xl font-bold text-gray-900">Create Account</h1>
                     <p className="text-gray-600 mt-2">Join CollabBot Admin Panel</p>
-                </div >
+                </div>
 
                 {/* Signup Form */}
-                < div className="bg-white rounded-2xl shadow-xl p-8" >
+                <div className="bg-white rounded-2xl shadow-xl p-8">
                     <form onSubmit={handleSubmit} className="space-y-5">
                         {/* Name Field */}
                         <div>
@@ -201,14 +201,14 @@ const Signup: React.FC = () => {
                             Sign in instead
                         </Link>
                     </div>
-                </div >
+                </div>
 
                 {/* Footer */}
-                < p className="text-center text-sm text-gray-600 mt-8" >
-                    © 2024 CollabBot.All rights reserved.
-                </p >
-            </div >
-        </div >
+                <p className="text-center text-sm text-gray-600 mt-8">
+                    © 2024 CollabBot. All rights reserved.
+                </p>
+            </div>
+        </div>
     );
 };
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MoreVertical, Eye, UserCheck, UserX, Trash2 } from 'lucide-react';
+import { Eye, UserCheck, UserX, Trash2 } from 'lucide-react';
 import DataTable from '@/components/DataTable';
 import StatusBadge from '@/components/StatusBadge';
 import Modal from '@/components/Modal';
@@ -146,8 +146,8 @@ const UserManagement: React.FC = () => {
                         key={tab}
                         onClick={() => setSelectedTab(tab as typeof selectedTab)}
                         className={`px-4 py-2 font-medium transition-colors border-b-2 ${selectedTab === tab
-                                ? 'border-primary-500 text-primary-600'
-                                : 'border-transparent text-gray-600 hover:text-gray-900'
+                            ? 'border-primary-500 text-primary-600'
+                            : 'border-transparent text-gray-600 hover:text-gray-900'
                             }`}
                     >
                         {tab}

@@ -50,8 +50,8 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose }) => {
                 {/* Logo */}
                 <div className="flex items-center justify-between p-6 border-b border-slate-700/50">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-primary-500 rounded-lg flex items-center justify-center">
-                            <span className="text-xl font-bold">CB</span>
+                        <div className="w-10 h-10 flex items-center justify-center">
+                            <img src="/logo.png" alt="CollabBot Logo" className="w-full h-full object-contain" />
                         </div>
                         <div>
                             <h1 className="text-xl font-bold">CollabBot</h1>
