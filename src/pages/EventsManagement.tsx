@@ -1,344 +1,786 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Calendar, MapPin, Users, Edit, Eye, Check, XCircle } from 'lucide-react';
-import StatusBadge from '@/components/StatusBadge';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+    Plus, Calendar, MapPin, Users, Edit, Eye, Check, XCircle,
+    Trash2, Search, RefreshCw, Clock, X, Save
+} from 'lucide-react';
 import Modal from '@/components/Modal';
 import { useToast } from '@/components/Toast';
-import { Event } from '@/types';
 import { formatDate } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 
-const EventsManagement: React.FC = () => {
-    const [events, setEvents] = useState<Event[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-    const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
-    const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-    const { showToast } = useToast();
+// ─── Status config ────────────────────────────────────────────────────────────
+// These IDs MUST match what's seeded in the event_statuses table:
+//   1 = Pending | 2 = Approved | 3 = Rejected
+const STATUS = {
+    PENDING: 1,
+    APPROVED: 2,
+    REJECTED: 3,
+} as const;
 
+type StatusId = 1 | 2 | 3;
+
+interface EventRow {
+    id: string;
+    title: string;
+    description: string | null;
+    venue: string | null;
+    event_date: string;
+    start_time: string | null;
+    end_time: string | null;
+    status_id: StatusId;
+    total_seats: number;
+    enrolled_count: number;
+    image_url: string | null;
+    creator_id: string;
+    created_at: string;
+    creator_name: string;
+}
+
+const statusLabel: Record<StatusId, string> = {
+    1: 'Pending',
+    2: 'Approved',
+    3: 'Rejected',
+};
+
+const statusStyles: Record<StatusId, string> = {
+    1: 'bg-yellow-100 text-yellow-700 border border-yellow-200',
+    2: 'bg-green-100 text-green-700 border border-green-200',
+    3: 'bg-red-100 text-red-700 border border-red-200',
+};
+
+// ─── Blank form ───────────────────────────────────────────────────────────────
+const blankForm = () => ({
+    title: '',
+    description: '',
+    venue: '',
+    event_date: '',
+    start_time: '',
+    end_time: '',
+    total_seats: 50,
+    image_url: '',
+});
+
+type EventForm = ReturnType<typeof blankForm>;
+
+// ─── Component ────────────────────────────────────────────────────────────────
+const EventsManagement: React.FC = () => {
+    const [events, setEvents] = useState<EventRow[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [filterTab, setFilterTab] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+    const [searchQuery, setSearchQuery] = useState('');
+
+    const [isCreateOpen, setIsCreateOpen] = useState(false);
+    const [isEditOpen, setIsEditOpen] = useState(false);
+    const [isDetailOpen, setIsDetailOpen] = useState(false);
+    const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+
+    const [selectedEvent, setSelectedEvent] = useState<EventRow | null>(null);
+    const [form, setForm] = useState<EventForm>(blankForm());
+    const [isSaving, setIsSaving] = useState(false);
+
+    const { showToast } = useToast();
+    const searchRef = useRef<HTMLInputElement>(null);
+
+    // ── Admin user id for creator_id on create ────────────────────────────────
+    const [adminUserId, setAdminUserId] = useState<string | null>(null);
     useEffect(() => {
+        supabase.auth.getUser().then(({ data }) => setAdminUserId(data.user?.id ?? null));
         fetchEvents();
     }, []);
 
+    // ── Fetch ─────────────────────────────────────────────────────────────────
     const fetchEvents = async () => {
         setIsLoading(true);
         try {
             const { data, error } = await supabase
                 .from('events')
                 .select('*, users(full_name)')
-                .order('event_date', { ascending: true });
+                .is('deleted_at', null)
+                .order('created_at', { ascending: false });
 
             if (error) throw error;
 
-            const mappedEvents: Event[] = (data || []).map((e: any) => ({
+            const rows: EventRow[] = (data || []).map((e: any) => ({
                 id: e.id,
                 title: e.title,
-                date: e.event_date,
-                location: e.venue,
-                attendeeCount: e.enrolled_count || 0,
-                status: getStatusFromId(e.status_id),
-                status_id: e.status_id,
-                image_url: e.image_url,
-                description: e.description,
-                total_seats: e.total_seats,
-                enrolled_count: e.enrolled_count,
+                description: e.description ?? '',
+                venue: e.venue ?? '',
+                event_date: e.event_date,
+                start_time: e.start_time ?? '',
+                end_time: e.end_time ?? '',
+                status_id: (e.status_id ?? 1) as StatusId,
+                total_seats: e.total_seats ?? 0,
+                enrolled_count: e.enrolled_count ?? 0,
+                image_url: e.image_url ?? null,
+                creator_id: e.creator_id,
+                created_at: e.created_at,
+                creator_name: e.users?.full_name ?? 'Unknown',
             }));
 
-            setEvents(mappedEvents);
-        } catch (error: any) {
-            showToast(error.message, 'error');
+            setEvents(rows);
+        } catch (err: any) {
+            showToast(`Error loading events: ${err.message}`, 'error');
         } finally {
             setIsLoading(false);
         }
     };
 
-    const getStatusFromId = (id: number): any => {
-        switch (id) {
-            case 1: return 'Pending';
-            case 2: return 'Approved';
-            case 3: return 'Rejected';
-            default: return 'Upcoming';
-        }
-    };
+    // ── Filtered list ─────────────────────────────────────────────────────────
+    const filtered = events.filter((e) => {
+        const matchTab =
+            filterTab === 'all' ||
+            (filterTab === 'pending' && e.status_id === STATUS.PENDING) ||
+            (filterTab === 'approved' && e.status_id === STATUS.APPROVED) ||
+            (filterTab === 'rejected' && e.status_id === STATUS.REJECTED);
 
-    const handleUpdateStatus = async (eventId: string, newStatusId: number) => {
+        const q = searchQuery.toLowerCase();
+        const matchSearch =
+            !q ||
+            e.title.toLowerCase().includes(q) ||
+            (e.venue ?? '').toLowerCase().includes(q) ||
+            e.creator_name.toLowerCase().includes(q);
+
+        return matchTab && matchSearch;
+    });
+
+    // ── Update status (Approve / Reject) ──────────────────────────────────────
+    const handleUpdateStatus = async (eventId: string, newStatus: StatusId) => {
         try {
             const { error } = await supabase
                 .from('events')
-                .update({ status_id: newStatusId })
+                .update({ status_id: newStatus })
                 .eq('id', eventId);
-
             if (error) throw error;
 
-            showToast(`Event state updated successfully`, 'success');
-            fetchEvents();
-        } catch (error: any) {
-            showToast(error.message, 'error');
+            showToast(
+                newStatus === STATUS.APPROVED ? '✅ Event approved!' : '❌ Event rejected.',
+                newStatus === STATUS.APPROVED ? 'success' : 'error'
+            );
+            // Optimistic update
+            setEvents((prev) =>
+                prev.map((e) => (e.id === eventId ? { ...e, status_id: newStatus } : e))
+            );
+            if (selectedEvent?.id === eventId) {
+                setSelectedEvent((prev) => prev ? { ...prev, status_id: newStatus } : prev);
+            }
+        } catch (err: any) {
+            showToast(`Failed: ${err.message}`, 'error');
         }
     };
 
-    const handleCreateEvent = (e: React.FormEvent) => {
-        e.preventDefault();
-        showToast('Event creation usually happens in-app, but admin can also create.', 'success');
-        setIsCreateModalOpen(false);
+    // ── Soft delete ───────────────────────────────────────────────────────────
+    const handleDelete = async () => {
+        if (!selectedEvent) return;
+        try {
+            const { error } = await supabase
+                .from('events')
+                .update({ deleted_at: new Date().toISOString() })
+                .eq('id', selectedEvent.id);
+            if (error) throw error;
+
+            showToast('Event deleted.', 'success');
+            setEvents((prev) => prev.filter((e) => e.id !== selectedEvent.id));
+            setIsDeleteOpen(false);
+            setSelectedEvent(null);
+        } catch (err: any) {
+            showToast(`Delete failed: ${err.message}`, 'error');
+        }
     };
 
+    // ── Create ────────────────────────────────────────────────────────────────
+    const handleCreate = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!adminUserId) {
+            showToast('Admin user ID not found. Please refresh.', 'error');
+            return;
+        }
+        setIsSaving(true);
+        try {
+            const { error } = await supabase.from('events').insert({
+                title: form.title,
+                description: form.description || null,
+                venue: form.venue || null,
+                event_date: form.event_date,
+                start_time: form.start_time || null,
+                end_time: form.end_time || null,
+                status_id: STATUS.APPROVED, // Admin-created events are auto-approved
+                total_seats: Number(form.total_seats),
+                enrolled_count: 0,
+                image_url: form.image_url || null,
+                creator_id: adminUserId,
+            });
+            if (error) throw error;
+
+            showToast('Event created and published!', 'success');
+            setIsCreateOpen(false);
+            setForm(blankForm());
+            fetchEvents();
+        } catch (err: any) {
+            showToast(`Create failed: ${err.message}`, 'error');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    // ── Edit ──────────────────────────────────────────────────────────────────
+    const openEdit = (ev: EventRow) => {
+        setSelectedEvent(ev);
+        setForm({
+            title: ev.title,
+            description: ev.description ?? '',
+            venue: ev.venue ?? '',
+            event_date: ev.event_date,
+            start_time: ev.start_time ?? '',
+            end_time: ev.end_time ?? '',
+            total_seats: ev.total_seats,
+            image_url: ev.image_url ?? '',
+        });
+        setIsEditOpen(true);
+    };
+
+    const handleEdit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedEvent) return;
+        setIsSaving(true);
+        try {
+            const { error } = await supabase
+                .from('events')
+                .update({
+                    title: form.title,
+                    description: form.description || null,
+                    venue: form.venue || null,
+                    event_date: form.event_date,
+                    start_time: form.start_time || null,
+                    end_time: form.end_time || null,
+                    total_seats: Number(form.total_seats),
+                    image_url: form.image_url || null,
+                })
+                .eq('id', selectedEvent.id);
+            if (error) throw error;
+
+            showToast('Event updated successfully!', 'success');
+            setIsEditOpen(false);
+            fetchEvents();
+        } catch (err: any) {
+            showToast(`Update failed: ${err.message}`, 'error');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    // ── Stats ─────────────────────────────────────────────────────────────────
+    const pending = events.filter((e) => e.status_id === STATUS.PENDING).length;
+    const approved = events.filter((e) => e.status_id === STATUS.APPROVED).length;
+    const rejected = events.filter((e) => e.status_id === STATUS.REJECTED).length;
+    const totalEnrolled = events.reduce((s, e) => s + e.enrolled_count, 0);
+
+    // ── Tabs ──────────────────────────────────────────────────────────────────
+    const tabs = [
+        { key: 'all', label: 'All Events', count: events.length },
+        { key: 'pending', label: 'Pending', count: pending },
+        { key: 'approved', label: 'Approved', count: approved },
+        { key: 'rejected', label: 'Rejected', count: rejected },
+    ] as const;
+
+    // ── Shared form fields ─────────────────────────────────────────────────────
+    const EventFormFields = () => (
+        <>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Event Title *</label>
+                <input
+                    type="text"
+                    required
+                    value={form.title}
+                    onChange={(e) => setForm({ ...form, title: e.target.value })}
+                    className="input-field"
+                    placeholder="e.g. Alumni Networking Night"
+                />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Event Date *</label>
+                    <input
+                        type="date"
+                        required
+                        value={form.event_date}
+                        onChange={(e) => setForm({ ...form, event_date: e.target.value })}
+                        className="input-field"
+                    />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Total Seats</label>
+                    <input
+                        type="number"
+                        min={1}
+                        value={form.total_seats}
+                        onChange={(e) => setForm({ ...form, total_seats: Number(e.target.value) })}
+                        className="input-field"
+                    />
+                </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
+                    <input
+                        type="time"
+                        value={form.start_time}
+                        onChange={(e) => setForm({ ...form, start_time: e.target.value })}
+                        className="input-field"
+                    />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
+                    <input
+                        type="time"
+                        value={form.end_time}
+                        onChange={(e) => setForm({ ...form, end_time: e.target.value })}
+                        className="input-field"
+                    />
+                </div>
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Venue</label>
+                <input
+                    type="text"
+                    value={form.venue}
+                    onChange={(e) => setForm({ ...form, venue: e.target.value })}
+                    className="input-field"
+                    placeholder="e.g. Auditorium A, Block B"
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                    rows={3}
+                    value={form.description}
+                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                    className="input-field"
+                    placeholder="Describe the event..."
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Image URL (optional)</label>
+                <input
+                    type="url"
+                    value={form.image_url}
+                    onChange={(e) => setForm({ ...form, image_url: e.target.value })}
+                    className="input-field"
+                    placeholder="https://..."
+                />
+            </div>
+        </>
+    );
+
+    // ── Render ─────────────────────────────────────────────────────────────────
     return (
         <div className="space-y-6">
-            {/* Page Header */}
-            <div className="flex items-center justify-between">
+
+            {/* ── Page Header ── */}
+            <div className="flex items-center justify-between flex-wrap gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Events Management</h1>
-                    <p className="text-gray-600 mt-1">Review and approve events submitted by Alumni/Seniors</p>
-                </div>
-                <button
-                    onClick={() => setIsCreateModalOpen(true)}
-                    className="btn-primary flex items-center gap-2"
-                >
-                    <Plus className="w-5 h-5" />
-                    Create Event
-                </button>
-            </div>
-
-            {/* Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                    <p className="text-sm text-gray-600">Pending Approval</p>
-                    <p className="text-2xl font-bold text-amber-600 mt-1">
-                        {events.filter(e => e.status_id === 1).length}
+                    <p className="text-gray-500 mt-1 text-sm">
+                        Review and approve events submitted by Alumni & Seniors
                     </p>
                 </div>
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                    <p className="text-sm text-gray-600">Approved Events</p>
-                    <p className="text-2xl font-bold text-green-600 mt-1">
-                        {events.filter(e => e.status_id === 2).length}
-                    </p>
-                </div>
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                    <p className="text-sm text-gray-600">Rejected/Cancelled</p>
-                    <p className="text-2xl font-bold text-red-600 mt-1">
-                        {events.filter(e => e.status_id === 3).length}
-                    </p>
-                </div>
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                    <p className="text-sm text-gray-600">Total Enrollment</p>
-                    <p className="text-2xl font-bold text-blue-600 mt-1">
-                        {events.reduce((sum, e) => sum + (e.enrolled_count || 0), 0)}
-                    </p>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={fetchEvents}
+                        className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                        title="Refresh"
+                    >
+                        <RefreshCw className="w-5 h-5" />
+                    </button>
+                    <button
+                        onClick={() => { setForm(blankForm()); setIsCreateOpen(true); }}
+                        className="btn-primary flex items-center gap-2"
+                    >
+                        <Plus className="w-5 h-5" />
+                        Create Event
+                    </button>
                 </div>
             </div>
 
-            {/* Events Grid */}
+            {/* ── Stats ── */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                    { label: 'Pending Approval', value: pending, color: 'text-amber-600', bg: 'bg-amber-50' },
+                    { label: 'Approved Events', value: approved, color: 'text-green-600', bg: 'bg-green-50' },
+                    { label: 'Rejected', value: rejected, color: 'text-red-500', bg: 'bg-red-50' },
+                    { label: 'Total Enrolled', value: totalEnrolled, color: 'text-blue-600', bg: 'bg-blue-50' },
+                ].map((s) => (
+                    <div key={s.label} className={`${s.bg} p-4 rounded-xl border border-gray-100`}>
+                        <p className="text-xs text-gray-500 font-medium">{s.label}</p>
+                        <p className={`text-3xl font-bold ${s.color} mt-1`}>{s.value}</p>
+                    </div>
+                ))}
+            </div>
+
+            {/* ── Filter Tabs + Search ── */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+                <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+                    {tabs.map((tab) => (
+                        <button
+                            key={tab.key}
+                            onClick={() => setFilterTab(tab.key)}
+                            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${filterTab === tab.key
+                                ? 'bg-white text-gray-900 shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700'
+                                }`}
+                        >
+                            {tab.label}
+                            <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full font-semibold ${filterTab === tab.key ? 'bg-primary-100 text-primary-700' : 'bg-gray-200 text-gray-600'
+                                }`}>
+                                {tab.count}
+                            </span>
+                        </button>
+                    ))}
+                </div>
+
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                        ref={searchRef}
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search events..."
+                        className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 w-56"
+                    />
+                    {searchQuery && (
+                        <button
+                            onClick={() => setSearchQuery('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        >
+                            <X className="w-3 h-3" />
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* ── Events Grid ── */}
             {isLoading ? (
-                <div className="flex justify-center p-12">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+                <div className="flex justify-center items-center py-24">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600" />
+                </div>
+            ) : filtered.length === 0 ? (
+                <div className="text-center py-24 text-gray-400">
+                    <Calendar className="w-16 h-16 mx-auto mb-4 opacity-30" />
+                    <p className="text-lg font-medium">No events found</p>
+                    <p className="text-sm mt-1">
+                        {searchQuery ? 'Try a different search term.' : 'Events created from the mobile app will appear here.'}
+                    </p>
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {events.map((event) => (
-                        <div key={event.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
-                            {/* Event Image */}
-                            <div className="h-48 bg-gray-100 relative">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    {filtered.map((event) => (
+                        <div
+                            key={event.id}
+                            className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-all group"
+                        >
+                            {/* Image */}
+                            <div className="h-44 relative overflow-hidden">
                                 {event.image_url ? (
-                                    <img src={event.image_url} alt={event.title} className="w-full h-full object-cover" />
+                                    <img
+                                        src={event.image_url}
+                                        alt={event.title}
+                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                    />
                                 ) : (
-                                    <div className="w-full h-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center">
-                                        <Calendar className="w-16 h-16 text-white opacity-50" />
+                                    <div className="w-full h-full bg-gradient-to-br from-primary-400 via-primary-500 to-indigo-600 flex items-center justify-center">
+                                        <Calendar className="w-14 h-14 text-white opacity-40" />
                                     </div>
                                 )}
-                                <div className="absolute top-4 right-4">
-                                    <StatusBadge variant={event.status} />
+                                {/* Status Badge */}
+                                <div className="absolute top-3 left-3">
+                                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusStyles[event.status_id]}`}>
+                                        {statusLabel[event.status_id]}
+                                    </span>
+                                </div>
+                                {/* Action buttons overlay */}
+                                <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button
+                                        onClick={() => { setSelectedEvent(event); setIsDetailOpen(true); }}
+                                        className="p-1.5 bg-white rounded-lg shadow text-gray-600 hover:text-primary-600"
+                                        title="View details"
+                                    >
+                                        <Eye className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={() => openEdit(event)}
+                                        className="p-1.5 bg-white rounded-lg shadow text-gray-600 hover:text-blue-600"
+                                        title="Edit"
+                                    >
+                                        <Edit className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={() => { setSelectedEvent(event); setIsDeleteOpen(true); }}
+                                        className="p-1.5 bg-white rounded-lg shadow text-gray-600 hover:text-red-600"
+                                        title="Delete"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
                                 </div>
                             </div>
 
-                            {/* Event Content */}
-                            <div className="p-6">
-                                <h3 className="text-lg font-semibold text-gray-900 mb-2 truncate">{event.title}</h3>
+                            {/* Content */}
+                            <div className="p-5">
+                                <h3 className="font-semibold text-gray-900 text-base line-clamp-1 mb-1">{event.title}</h3>
+                                <p className="text-xs text-gray-400 mb-3">by {event.creator_name}</p>
 
-                                <div className="space-y-2 text-sm text-gray-600">
+                                <div className="space-y-1.5 text-sm text-gray-500">
                                     <div className="flex items-center gap-2">
-                                        <Calendar className="w-4 h-4" />
-                                        <span>{formatDate(event.date)}</span>
+                                        <Calendar className="w-4 h-4 shrink-0" />
+                                        <span>{formatDate(event.event_date)}</span>
+                                        {event.start_time && (
+                                            <span className="flex items-center gap-1 ml-auto text-xs">
+                                                <Clock className="w-3 h-3" />
+                                                {event.start_time}
+                                            </span>
+                                        )}
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <MapPin className="w-4 h-4" />
-                                        <span className="truncate">{event.location}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <Users className="w-4 h-4" />
-                                        <span>{event.attendeeCount} / {event.total_seats} enrolled</span>
-                                    </div>
-                                </div>
-
-                                {/* Actions */}
-                                <div className="flex flex-col gap-2 mt-6">
-                                    <div className="flex gap-2">
-                                        <button
-                                            onClick={() => {
-                                                setSelectedEvent(event);
-                                                setIsDetailModalOpen(true);
-                                            }}
-                                            className="flex-1 px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-2"
-                                        >
-                                            <Eye className="w-4 h-4" />
-                                            View
-                                        </button>
-                                        <button className="flex-1 px-3 py-2 text-sm bg-primary-50 text-primary-700 rounded-lg hover:bg-primary-100 transition-colors flex items-center justify-center gap-2">
-                                            <Edit className="w-4 h-4" />
-                                            Edit
-                                        </button>
-                                    </div>
-
-                                    {event.status_id === 1 && (
-                                        <div className="flex gap-2">
-                                            <button
-                                                onClick={() => handleUpdateStatus(event.id, 2)}
-                                                className="flex-1 px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
-                                            >
-                                                <Check className="w-4 h-4" />
-                                                Approve
-                                            </button>
-                                            <button
-                                                onClick={() => handleUpdateStatus(event.id, 3)}
-                                                className="flex-1 px-3 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
-                                            >
-                                                <XCircle className="w-4 h-4" />
-                                                Reject
-                                            </button>
+                                    {event.venue && (
+                                        <div className="flex items-center gap-2">
+                                            <MapPin className="w-4 h-4 shrink-0" />
+                                            <span className="truncate">{event.venue}</span>
                                         </div>
                                     )}
+                                    <div className="flex items-center gap-2">
+                                        <Users className="w-4 h-4 shrink-0" />
+                                        <span>{event.enrolled_count} / {event.total_seats} enrolled</span>
+                                        {event.total_seats > 0 && (
+                                            <div className="ml-auto w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                                <div
+                                                    className="h-full bg-primary-500 rounded-full"
+                                                    style={{ width: `${Math.min(100, (event.enrolled_count / event.total_seats) * 100)}%` }}
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
+
+                                {/* Approve / Reject only for Pending */}
+                                {event.status_id === STATUS.PENDING && (
+                                    <div className="flex gap-2 mt-4 pt-4 border-t border-gray-100">
+                                        <button
+                                            onClick={() => handleUpdateStatus(event.id, STATUS.APPROVED)}
+                                            className="flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                                        >
+                                            <Check className="w-4 h-4" />
+                                            Approve
+                                        </button>
+                                        <button
+                                            onClick={() => handleUpdateStatus(event.id, STATUS.REJECTED)}
+                                            className="flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+                                        >
+                                            <XCircle className="w-4 h-4" />
+                                            Reject
+                                        </button>
+                                    </div>
+                                )}
+
+                                {/* Re-approve a rejected event */}
+                                {event.status_id === STATUS.REJECTED && (
+                                    <div className="mt-4 pt-4 border-t border-gray-100">
+                                        <button
+                                            onClick={() => handleUpdateStatus(event.id, STATUS.APPROVED)}
+                                            className="w-full flex items-center justify-center gap-1.5 py-2 text-sm font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                                        >
+                                            <Check className="w-4 h-4" />
+                                            Re-approve
+                                        </button>
+                                    </div>
+                                )}
+
+                                {/* Reject an approved event */}
+                                {event.status_id === STATUS.APPROVED && (
+                                    <div className="mt-4 pt-4 border-t border-gray-100">
+                                        <button
+                                            onClick={() => handleUpdateStatus(event.id, STATUS.REJECTED)}
+                                            className="w-full flex items-center justify-center gap-1.5 py-2 text-sm font-medium text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                                        >
+                                            <XCircle className="w-4 h-4" />
+                                            Revoke Approval
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     ))}
                 </div>
             )}
 
-            {/* Create Event Modal */}
-            <Modal
-                isOpen={isCreateModalOpen}
-                onClose={() => setIsCreateModalOpen(false)}
-                title="Create New Event"
-                size="lg"
-            >
-                <form onSubmit={handleCreateEvent} className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Event Title</label>
-                        <input type="text" required className="input-field" placeholder="Enter event title" />
+            {/* ══════════════════════════════════════════════════════════════════
+                Create Event Modal
+            ══════════════════════════════════════════════════════════════════ */}
+            <Modal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} title="Create New Event" size="lg">
+                <form onSubmit={handleCreate} className="space-y-4">
+                    <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg text-sm text-blue-700 mb-2">
+                        <Check className="w-4 h-4 shrink-0" />
+                        Admin-created events are automatically approved and visible to users.
                     </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
-                            <input type="date" required className="input-field" />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Time</label>
-                            <input type="time" required className="input-field" />
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Location</label>
-                        <input type="text" required className="input-field" placeholder="Enter location" />
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
-                        <textarea rows={4} required className="input-field" placeholder="Event description"></textarea>
-                    </div>
-
-                    <div className="flex gap-3 pt-4">
-                        <button type="submit" className="btn-primary flex-1">Create Event</button>
-                        <button
-                            type="button"
-                            onClick={() => setIsCreateModalOpen(false)}
-                            className="btn-secondary flex-1"
-                        >
+                    <EventFormFields />
+                    <div className="flex gap-3 pt-2">
+                        <button type="submit" disabled={isSaving} className="btn-primary flex-1 flex items-center justify-center gap-2">
+                            {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                            {isSaving ? 'Creating...' : 'Create & Publish'}
+                        </button>
+                        <button type="button" onClick={() => setIsCreateOpen(false)} className="btn-secondary flex-1">
                             Cancel
                         </button>
                     </div>
                 </form>
             </Modal>
 
-            {/* Event Detail Modal */}
-            <Modal
-                isOpen={isDetailModalOpen}
-                onClose={() => setIsDetailModalOpen(false)}
-                title="Event Details"
-                size="lg"
-            >
+            {/* ══════════════════════════════════════════════════════════════════
+                Edit Event Modal
+            ══════════════════════════════════════════════════════════════════ */}
+            <Modal isOpen={isEditOpen} onClose={() => setIsEditOpen(false)} title="Edit Event" size="lg">
+                <form onSubmit={handleEdit} className="space-y-4">
+                    <EventFormFields />
+                    <div className="flex gap-3 pt-2">
+                        <button type="submit" disabled={isSaving} className="btn-primary flex-1 flex items-center justify-center gap-2">
+                            {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                            {isSaving ? 'Saving...' : 'Save Changes'}
+                        </button>
+                        <button type="button" onClick={() => setIsEditOpen(false)} className="btn-secondary flex-1">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            </Modal>
+
+            {/* ══════════════════════════════════════════════════════════════════
+                Detail Modal
+            ══════════════════════════════════════════════════════════════════ */}
+            <Modal isOpen={isDetailOpen} onClose={() => setIsDetailOpen(false)} title="Event Details" size="xl">
                 {selectedEvent && (
-                    <div className="space-y-4">
-                        <div className="h-64 bg-gray-100 rounded-lg overflow-hidden">
+                    <div className="space-y-5">
+                        {/* Hero image */}
+                        <div className="h-56 rounded-xl overflow-hidden">
                             {selectedEvent.image_url ? (
                                 <img src={selectedEvent.image_url} alt={selectedEvent.title} className="w-full h-full object-cover" />
                             ) : (
-                                <div className="w-full h-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center">
-                                    <Calendar className="w-20 h-20 text-white opacity-50" />
+                                <div className="w-full h-full bg-gradient-to-br from-primary-400 to-indigo-600 flex items-center justify-center">
+                                    <Calendar className="w-20 h-20 text-white opacity-40" />
                                 </div>
                             )}
                         </div>
 
-                        <div>
-                            <div className="flex items-start justify-between">
-                                <h3 className="text-2xl font-bold text-gray-900">{selectedEvent.title}</h3>
-                                <StatusBadge variant={selectedEvent.status} />
+                        {/* Title + status */}
+                        <div className="flex items-start justify-between gap-3">
+                            <h3 className="text-2xl font-bold text-gray-900">{selectedEvent.title}</h3>
+                            <span className={`text-sm font-semibold px-3 py-1 rounded-full shrink-0 ${statusStyles[selectedEvent.status_id]}`}>
+                                {statusLabel[selectedEvent.status_id]}
+                            </span>
+                        </div>
+
+                        {/* Creator */}
+                        <p className="text-sm text-gray-500">Posted by <span className="font-medium text-gray-700">{selectedEvent.creator_name}</span></p>
+
+                        {/* Meta grid */}
+                        <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-xl text-sm">
+                            <div className="flex items-center gap-2 text-gray-600">
+                                <Calendar className="w-4 h-4" />
+                                <span>{formatDate(selectedEvent.event_date)}</span>
+                            </div>
+                            {selectedEvent.start_time && (
+                                <div className="flex items-center gap-2 text-gray-600">
+                                    <Clock className="w-4 h-4" />
+                                    <span>{selectedEvent.start_time} – {selectedEvent.end_time}</span>
+                                </div>
+                            )}
+                            <div className="flex items-center gap-2 text-gray-600 col-span-2">
+                                <MapPin className="w-4 h-4" />
+                                <span>{selectedEvent.venue || '—'}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-gray-600">
+                                <Users className="w-4 h-4" />
+                                <span>{selectedEvent.enrolled_count} / {selectedEvent.total_seats} enrolled</span>
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4 pt-4 border-t">
+                        {/* Description */}
+                        {selectedEvent.description && (
                             <div>
-                                <p className="text-sm text-gray-600">Date</p>
-                                <p className="font-medium text-gray-900 flex items-center gap-2 mt-1">
-                                    <Calendar className="w-4 h-4" />
-                                    {formatDate(selectedEvent.date)}
-                                </p>
-                            </div>
-                            <div>
-                                <p className="text-sm text-gray-600">Enrollment</p>
-                                <p className="font-medium text-gray-900 flex items-center gap-2 mt-1">
-                                    <Users className="w-4 h-4" />
-                                    {selectedEvent.attendeeCount} / {selectedEvent.total_seats}
-                                </p>
-                            </div>
-                            <div className="col-span-2">
-                                <p className="text-sm text-gray-600">Location</p>
-                                <p className="font-medium text-gray-900 flex items-center gap-2 mt-1">
-                                    <MapPin className="w-4 h-4" />
-                                    {selectedEvent.location}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="pt-4 border-t">
-                            <p className="text-sm text-gray-600 mb-2">Description</p>
-                            <p className="text-gray-900 whitespace-pre-wrap">{selectedEvent.description}</p>
-                        </div>
-
-                        {selectedEvent.status_id === 1 && (
-                            <div className="flex gap-3 pt-4 border-t">
-                                <button
-                                    onClick={() => {
-                                        handleUpdateStatus(selectedEvent.id, 2);
-                                        setIsDetailModalOpen(false);
-                                    }}
-                                    className="btn-primary flex-1 bg-green-600 hover:bg-green-700"
-                                >
-                                    Approve Event
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        handleUpdateStatus(selectedEvent.id, 3);
-                                        setIsDetailModalOpen(false);
-                                    }}
-                                    className="btn-primary flex-1 bg-red-600 hover:bg-red-700"
-                                >
-                                    Reject Event
-                                </button>
+                                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Description</p>
+                                <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">{selectedEvent.description}</p>
                             </div>
                         )}
+
+                        {/* Actions */}
+                        <div className="flex gap-3 pt-4 border-t">
+                            {selectedEvent.status_id === STATUS.PENDING && (
+                                <>
+                                    <button
+                                        onClick={() => { handleUpdateStatus(selectedEvent.id, STATUS.APPROVED); setIsDetailOpen(false); }}
+                                        className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors"
+                                    >
+                                        <Check className="w-4 h-4" /> Approve
+                                    </button>
+                                    <button
+                                        onClick={() => { handleUpdateStatus(selectedEvent.id, STATUS.REJECTED); setIsDetailOpen(false); }}
+                                        className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium transition-colors"
+                                    >
+                                        <XCircle className="w-4 h-4" /> Reject
+                                    </button>
+                                </>
+                            )}
+                            {selectedEvent.status_id === STATUS.APPROVED && (
+                                <button
+                                    onClick={() => { handleUpdateStatus(selectedEvent.id, STATUS.REJECTED); setIsDetailOpen(false); }}
+                                    className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 font-medium transition-colors"
+                                >
+                                    <XCircle className="w-4 h-4" /> Revoke Approval
+                                </button>
+                            )}
+                            {selectedEvent.status_id === STATUS.REJECTED && (
+                                <button
+                                    onClick={() => { handleUpdateStatus(selectedEvent.id, STATUS.APPROVED); setIsDetailOpen(false); }}
+                                    className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors"
+                                >
+                                    <Check className="w-4 h-4" /> Re-approve
+                                </button>
+                            )}
+                            <button
+                                onClick={() => openEdit(selectedEvent)}
+                                className="flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 font-medium transition-colors"
+                            >
+                                <Edit className="w-4 h-4" /> Edit
+                            </button>
+                        </div>
                     </div>
                 )}
+            </Modal>
+
+            {/* ══════════════════════════════════════════════════════════════════
+                Delete Confirmation Modal
+            ══════════════════════════════════════════════════════════════════ */}
+            <Modal isOpen={isDeleteOpen} onClose={() => setIsDeleteOpen(false)} title="Delete Event" size="sm">
+                <div className="space-y-4">
+                    <p className="text-gray-600 text-sm">
+                        Are you sure you want to delete <span className="font-semibold text-gray-900">"{selectedEvent?.title}"</span>? This action cannot be undone.
+                    </p>
+                    <div className="flex gap-3">
+                        <button
+                            onClick={handleDelete}
+                            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium transition-colors"
+                        >
+                            <Trash2 className="w-4 h-4" /> Delete
+                        </button>
+                        <button
+                            onClick={() => setIsDeleteOpen(false)}
+                            className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 font-medium transition-colors"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
             </Modal>
         </div>
     );

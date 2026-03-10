@@ -1,10 +1,35 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, Bell, Shield, Save } from 'lucide-react';
 import { useToast } from '@/components/Toast';
+import { supabase } from '@/lib/supabase';
 
 const Settings: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security'>('profile');
     const { showToast } = useToast();
+    const [profileData, setProfileData] = useState({ full_name: '', email: '' });
+    const [loadingProfile, setLoadingProfile] = useState(true);
+
+    useEffect(() => {
+        const fetchProfile = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            const { data } = await supabase
+                .from('users')
+                .select('full_name, email')
+                .eq('id', user.id)
+                .single();
+
+            if (data) {
+                setProfileData({ full_name: data.full_name, email: data.email });
+            } else {
+                // fallback to auth email
+                setProfileData({ full_name: user.email?.split('@')[0] ?? '', email: user.email ?? '' });
+            }
+            setLoadingProfile(false);
+        };
+        fetchProfile();
+    }, []);
 
     const handleSaveProfile = (e: React.FormEvent) => {
         e.preventDefault();
@@ -79,7 +104,11 @@ const Settings: React.FC = () => {
 
                                 <div className="flex items-center gap-6">
                                     <div className="w-24 h-24 bg-primary-100 rounded-full flex items-center justify-center">
-                                        <span className="text-4xl text-primary-700 font-bold">AD</span>
+                                        <span className="text-4xl text-primary-700 font-bold">
+                                            {profileData.full_name
+                                                ? profileData.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
+                                                : 'AD'}
+                                        </span>
                                     </div>
                                     <div>
                                         <button type="button" className="btn-primary text-sm">
@@ -96,7 +125,9 @@ const Settings: React.FC = () => {
                                         </label>
                                         <input
                                             type="text"
-                                            defaultValue="Admin User"
+                                            value={profileData.full_name}
+                                            onChange={(e) => setProfileData({ ...profileData, full_name: e.target.value })}
+                                            disabled={loadingProfile}
                                             className="input-field"
                                         />
                                     </div>
@@ -106,7 +137,9 @@ const Settings: React.FC = () => {
                                         </label>
                                         <input
                                             type="email"
-                                            defaultValue="admin@collabbot.edu"
+                                            value={profileData.email}
+                                            onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
+                                            disabled={loadingProfile}
                                             className="input-field"
                                         />
                                     </div>

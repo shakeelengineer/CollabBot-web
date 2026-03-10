@@ -21,20 +21,22 @@ const Dashboard: React.FC = () => {
     const fetchStats = async () => {
         try {
             // Fetch real pending events count
-            const { count: pendingEvents, error: eventsError } = await supabase
+            const { count: pendingEvents } = await supabase
                 .from('events')
                 .select('*', { count: 'exact', head: true })
-                .eq('status_id', 1);
+                .eq('status_id', 1)
+                .is('deleted_at', null);
 
             // Fetch real total users count
-            const { count: totalUsers, error: usersError } = await supabase
+            const { count: totalUsers } = await supabase
                 .from('users')
-                .select('*', { count: 'exact', head: true });
+                .select('*', { count: 'exact', head: true })
+                .is('deleted_at', null);
 
             setStats({
-                totalUsers: totalUsers || 0,
-                activeMentorships: 12, // Still mock for now
-                pendingApprovals: pendingEvents || 0,
+                totalUsers: totalUsers ?? 0,
+                activeMentorships: 12,
+                pendingApprovals: pendingEvents ?? 0,
                 weeklyEngagement: 85
             });
         } catch (error) {
