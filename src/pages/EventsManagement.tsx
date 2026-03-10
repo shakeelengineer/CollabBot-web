@@ -1,28 +1,85 @@
-import React, { useState } from 'react';
-import { Plus, Calendar, MapPin, Users, Edit, X as XIcon, Eye } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Calendar, MapPin, Users, Edit, Eye, Check, XCircle } from 'lucide-react';
 import StatusBadge from '@/components/StatusBadge';
 import Modal from '@/components/Modal';
 import { useToast } from '@/components/Toast';
-import { mockEvents } from '@/data/mockData';
 import { Event } from '@/types';
 import { formatDate } from '@/lib/utils';
+import { supabase } from '@/lib/supabase';
 
 const EventsManagement: React.FC = () => {
+    const [events, setEvents] = useState<Event[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
     const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
     const { showToast } = useToast();
 
-    const handleCreateEvent = (e: React.FormEvent) => {
-        e.preventDefault();
-        showToast('Event created successfully', 'success');
-        setIsCreateModalOpen(false);
+    useEffect(() => {
+        fetchEvents();
+    }, []);
+
+    const fetchEvents = async () => {
+        setIsLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('events')
+                .select('*, users(full_name)')
+                .order('event_date', { ascending: true });
+
+            if (error) throw error;
+
+            const mappedEvents: Event[] = (data || []).map((e: any) => ({
+                id: e.id,
+                title: e.title,
+                date: e.event_date,
+                location: e.venue,
+                attendeeCount: e.enrolled_count || 0,
+                status: getStatusFromId(e.status_id),
+                status_id: e.status_id,
+                image_url: e.image_url,
+                description: e.description,
+                total_seats: e.total_seats,
+                enrolled_count: e.enrolled_count,
+            }));
+
+            setEvents(mappedEvents);
+        } catch (error: any) {
+            showToast(error.message, 'error');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
-    const handleCancelEvent = (event: Event) => {
-        if (confirm(`Are you sure you want to cancel "${event.title}"?`)) {
-            showToast(`Event "${event.title}" has been cancelled`, 'warning');
+    const getStatusFromId = (id: number): any => {
+        switch (id) {
+            case 1: return 'Pending';
+            case 2: return 'Approved';
+            case 3: return 'Rejected';
+            default: return 'Upcoming';
         }
+    };
+
+    const handleUpdateStatus = async (eventId: string, newStatusId: number) => {
+        try {
+            const { error } = await supabase
+                .from('events')
+                .update({ status_id: newStatusId })
+                .eq('id', eventId);
+
+            if (error) throw error;
+
+            showToast(`Event state updated successfully`, 'success');
+            fetchEvents();
+        } catch (error: any) {
+            showToast(error.message, 'error');
+        }
+    };
+
+    const handleCreateEvent = (e: React.FormEvent) => {
+        e.preventDefault();
+        showToast('Event creation usually happens in-app, but admin can also create.', 'success');
+        setIsCreateModalOpen(false);
     };
 
     return (
@@ -31,7 +88,7 @@ const EventsManagement: React.FC = () => {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Events Management</h1>
-                    <p className="text-gray-600 mt-1">Create and manage platform events</p>
+                    <p className="text-gray-600 mt-1">Review and approve events submitted by Alumni/Seniors</p>
                 </div>
                 <button
                     onClick={() => setIsCreateModalOpen(true)}
@@ -43,87 +100,118 @@ const EventsManagement: React.FC = () => {
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                    <p className="text-sm text-gray-600">Upcoming Events</p>
-                    <p className="text-2xl font-bold text-blue-600 mt-1">
-                        {mockEvents.filter(e => e.status === 'Upcoming').length}
-                    </p>
-                </div>
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                    <p className="text-sm text-gray-600">Ongoing Events</p>
+                    <p className="text-sm text-gray-600">Pending Approval</p>
                     <p className="text-2xl font-bold text-amber-600 mt-1">
-                        {mockEvents.filter(e => e.status === 'Ongoing').length}
+                        {events.filter(e => e.status_id === 1).length}
                     </p>
                 </div>
                 <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                    <p className="text-sm text-gray-600">Completed Events</p>
-                    <p className="text-2xl font-bold text-gray-600 mt-1">
-                        {mockEvents.filter(e => e.status === 'Completed').length}
+                    <p className="text-sm text-gray-600">Approved Events</p>
+                    <p className="text-2xl font-bold text-green-600 mt-1">
+                        {events.filter(e => e.status_id === 2).length}
+                    </p>
+                </div>
+                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                    <p className="text-sm text-gray-600">Rejected/Cancelled</p>
+                    <p className="text-2xl font-bold text-red-600 mt-1">
+                        {events.filter(e => e.status_id === 3).length}
+                    </p>
+                </div>
+                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                    <p className="text-sm text-gray-600">Total Enrollment</p>
+                    <p className="text-2xl font-bold text-blue-600 mt-1">
+                        {events.reduce((sum, e) => sum + (e.enrolled_count || 0), 0)}
                     </p>
                 </div>
             </div>
 
             {/* Events Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {mockEvents.map((event) => (
-                    <div key={event.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
-                        {/* Event Image */}
-                        <div className="h-48 bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center">
-                            <Calendar className="w-16 h-16 text-white opacity-50" />
-                        </div>
-
-                        {/* Event Content */}
-                        <div className="p-6">
-                            <div className="flex items-start justify-between mb-3">
-                                <h3 className="text-lg font-semibold text-gray-900 flex-1">{event.title}</h3>
-                                <StatusBadge variant={event.status} />
-                            </div>
-
-                            <div className="space-y-2 text-sm text-gray-600">
-                                <div className="flex items-center gap-2">
-                                    <Calendar className="w-4 h-4" />
-                                    <span>{formatDate(event.date)}</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <MapPin className="w-4 h-4" />
-                                    <span>{event.location}</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <Users className="w-4 h-4" />
-                                    <span>{event.attendeeCount} attendees</span>
-                                </div>
-                            </div>
-
-                            {/* Actions */}
-                            <div className="flex gap-2 mt-4">
-                                <button
-                                    onClick={() => {
-                                        setSelectedEvent(event);
-                                        setIsDetailModalOpen(true);
-                                    }}
-                                    className="flex-1 px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-2"
-                                >
-                                    <Eye className="w-4 h-4" />
-                                    View
-                                </button>
-                                <button className="flex-1 px-3 py-2 text-sm bg-primary-50 text-primary-700 rounded-lg hover:bg-primary-100 transition-colors flex items-center justify-center gap-2">
-                                    <Edit className="w-4 h-4" />
-                                    Edit
-                                </button>
-                                {event.status === 'Upcoming' && (
-                                    <button
-                                        onClick={() => handleCancelEvent(event)}
-                                        className="px-3 py-2 text-sm bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors"
-                                    >
-                                        <XIcon className="w-4 h-4" />
-                                    </button>
+            {isLoading ? (
+                <div className="flex justify-center p-12">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {events.map((event) => (
+                        <div key={event.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
+                            {/* Event Image */}
+                            <div className="h-48 bg-gray-100 relative">
+                                {event.image_url ? (
+                                    <img src={event.image_url} alt={event.title} className="w-full h-full object-cover" />
+                                ) : (
+                                    <div className="w-full h-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center">
+                                        <Calendar className="w-16 h-16 text-white opacity-50" />
+                                    </div>
                                 )}
+                                <div className="absolute top-4 right-4">
+                                    <StatusBadge variant={event.status} />
+                                </div>
+                            </div>
+
+                            {/* Event Content */}
+                            <div className="p-6">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-2 truncate">{event.title}</h3>
+
+                                <div className="space-y-2 text-sm text-gray-600">
+                                    <div className="flex items-center gap-2">
+                                        <Calendar className="w-4 h-4" />
+                                        <span>{formatDate(event.date)}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <MapPin className="w-4 h-4" />
+                                        <span className="truncate">{event.location}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Users className="w-4 h-4" />
+                                        <span>{event.attendeeCount} / {event.total_seats} enrolled</span>
+                                    </div>
+                                </div>
+
+                                {/* Actions */}
+                                <div className="flex flex-col gap-2 mt-6">
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => {
+                                                setSelectedEvent(event);
+                                                setIsDetailModalOpen(true);
+                                            }}
+                                            className="flex-1 px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-2"
+                                        >
+                                            <Eye className="w-4 h-4" />
+                                            View
+                                        </button>
+                                        <button className="flex-1 px-3 py-2 text-sm bg-primary-50 text-primary-700 rounded-lg hover:bg-primary-100 transition-colors flex items-center justify-center gap-2">
+                                            <Edit className="w-4 h-4" />
+                                            Edit
+                                        </button>
+                                    </div>
+
+                                    {event.status_id === 1 && (
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => handleUpdateStatus(event.id, 2)}
+                                                className="flex-1 px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                                            >
+                                                <Check className="w-4 h-4" />
+                                                Approve
+                                            </button>
+                                            <button
+                                                onClick={() => handleUpdateStatus(event.id, 3)}
+                                                className="flex-1 px-3 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
+                                            >
+                                                <XCircle className="w-4 h-4" />
+                                                Reject
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
-                    </div>
-                ))}
-            </div>
+                    ))}
+                </div>
+            )}
 
             {/* Create Event Modal */}
             <Modal
@@ -181,8 +269,14 @@ const EventsManagement: React.FC = () => {
             >
                 {selectedEvent && (
                     <div className="space-y-4">
-                        <div className="h-48 bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center rounded-lg">
-                            <Calendar className="w-20 h-20 text-white opacity-50" />
+                        <div className="h-64 bg-gray-100 rounded-lg overflow-hidden">
+                            {selectedEvent.image_url ? (
+                                <img src={selectedEvent.image_url} alt={selectedEvent.title} className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center">
+                                    <Calendar className="w-20 h-20 text-white opacity-50" />
+                                </div>
+                            )}
                         </div>
 
                         <div>
@@ -201,10 +295,10 @@ const EventsManagement: React.FC = () => {
                                 </p>
                             </div>
                             <div>
-                                <p className="text-sm text-gray-600">Attendees</p>
+                                <p className="text-sm text-gray-600">Enrollment</p>
                                 <p className="font-medium text-gray-900 flex items-center gap-2 mt-1">
                                     <Users className="w-4 h-4" />
-                                    {selectedEvent.attendeeCount}
+                                    {selectedEvent.attendeeCount} / {selectedEvent.total_seats}
                                 </p>
                             </div>
                             <div className="col-span-2">
@@ -218,13 +312,31 @@ const EventsManagement: React.FC = () => {
 
                         <div className="pt-4 border-t">
                             <p className="text-sm text-gray-600 mb-2">Description</p>
-                            <p className="text-gray-900">{selectedEvent.description}</p>
+                            <p className="text-gray-900 whitespace-pre-wrap">{selectedEvent.description}</p>
                         </div>
 
-                        <div className="flex gap-3 pt-4">
-                            <button className="btn-primary flex-1">View Attendees</button>
-                            <button className="btn-secondary flex-1">Edit Event</button>
-                        </div>
+                        {selectedEvent.status_id === 1 && (
+                            <div className="flex gap-3 pt-4 border-t">
+                                <button
+                                    onClick={() => {
+                                        handleUpdateStatus(selectedEvent.id, 2);
+                                        setIsDetailModalOpen(false);
+                                    }}
+                                    className="btn-primary flex-1 bg-green-600 hover:bg-green-700"
+                                >
+                                    Approve Event
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        handleUpdateStatus(selectedEvent.id, 3);
+                                        setIsDetailModalOpen(false);
+                                    }}
+                                    className="btn-primary flex-1 bg-red-600 hover:bg-red-700"
+                                >
+                                    Reject Event
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
             </Modal>

@@ -2,7 +2,7 @@ export type UserType = 'Junior' | 'Senior' | 'Alumni';
 export type UserStatus = 'Active' | 'Inactive';
 export type JobStatus = 'Pending' | 'Approved' | 'Rejected';
 export type ReportStatus = 'Pending' | 'Resolved' | 'Escalated';
-export type EventStatus = 'Upcoming' | 'Ongoing' | 'Completed';
+export type EventStatus = 'Pending' | 'Approved' | 'Rejected' | 'Upcoming' | 'Ongoing' | 'Completed';
 export type MentorshipStatus = 'Active' | 'Completed' | 'Pending';
 
 export interface User {
@@ -43,8 +43,12 @@ export interface Event {
     location: string;
     attendeeCount: number;
     status: EventStatus;
-    image: string;
+    status_id?: number;
+    image?: string;
+    image_url?: string;
     description: string;
+    total_seats?: number;
+    enrolled_count?: number;
 }
 
 export interface MentorshipConnection {

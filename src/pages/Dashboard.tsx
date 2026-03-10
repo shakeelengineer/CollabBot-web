@@ -1,11 +1,47 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Users, UserCheck, Clock, TrendingUp } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import StatCard from '@/components/StatCard';
 import { mockDashboardStats, mockRecentActivity, userDistribution, weeklyEngagementData } from '@/data/mockData';
 import { formatDateTime } from '@/lib/utils';
+import { supabase } from '@/lib/supabase';
 
 const Dashboard: React.FC = () => {
+    const [stats, setStats] = useState({
+        totalUsers: 0,
+        activeMentorships: 0,
+        pendingApprovals: 0,
+        weeklyEngagement: 0
+    });
+
+    useEffect(() => {
+        fetchStats();
+    }, []);
+
+    const fetchStats = async () => {
+        try {
+            // Fetch real pending events count
+            const { count: pendingEvents, error: eventsError } = await supabase
+                .from('events')
+                .select('*', { count: 'exact', head: true })
+                .eq('status_id', 1);
+
+            // Fetch real total users count
+            const { count: totalUsers, error: usersError } = await supabase
+                .from('users')
+                .select('*', { count: 'exact', head: true });
+
+            setStats({
+                totalUsers: totalUsers || 0,
+                activeMentorships: 12, // Still mock for now
+                pendingApprovals: pendingEvents || 0,
+                weeklyEngagement: 85
+            });
+        } catch (error) {
+            console.error('Error fetching dashboard stats:', error);
+        }
+    };
+
     return (
         <div className="space-y-6">
             {/* Page Title */}
@@ -18,25 +54,25 @@ const Dashboard: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <StatCard
                     title="Total Users"
-                    value={mockDashboardStats.totalUsers}
+                    value={stats.totalUsers || mockDashboardStats.totalUsers}
                     icon={Users}
                     trend={{ value: '12%', isPositive: true }}
                 />
                 <StatCard
                     title="Active Mentorships"
-                    value={mockDashboardStats.activeMentorships}
+                    value={stats.activeMentorships || mockDashboardStats.activeMentorships}
                     icon={UserCheck}
                     trend={{ value: '8%', isPositive: true }}
                 />
                 <StatCard
                     title="Pending Approvals"
-                    value={mockDashboardStats.pendingApprovals}
+                    value={stats.pendingApprovals || 0}
                     icon={Clock}
-                    trend={{ value: '3%', isPositive: false }}
+                    trend={{ value: 'Real-time', isPositive: true }}
                 />
                 <StatCard
                     title="Weekly Engagement"
-                    value={mockDashboardStats.weeklyEngagement}
+                    value={stats.weeklyEngagement || mockDashboardStats.weeklyEngagement}
                     icon={TrendingUp}
                     trend={{ value: '18%', isPositive: true }}
                 />

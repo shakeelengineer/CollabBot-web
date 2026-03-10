@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { LogIn, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/components/Toast';
+import { supabase } from '@/lib/supabase';
 
 const Login: React.FC = () => {
     const navigate = useNavigate();
@@ -12,16 +13,42 @@ const Login: React.FC = () => {
         password: '',
     });
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        // Demo authentication - replace with real authentication later
-        if (formData.email && formData.password) {
+        try {
+            // 1. Authenticate with Supabase
+            const { data, error } = await supabase.auth.signInWithPassword({
+                email: formData.email,
+                password: formData.password,
+            });
+
+            if (error) throw error;
+
+            // 2. Check if user is Admin
+            const { data: profile, error: profileError } = await supabase
+                .from('users') // or 'profiles' depending on your schema
+                .select('role')
+                .eq('id', data.user.id)
+                .single();
+
+            if (profileError || !profile) {
+                await supabase.auth.signOut();
+                showToast('User profile not found', 'error');
+                return;
+            }
+
+            if (profile.role.toLowerCase() !== 'admin') {
+                await supabase.auth.signOut();
+                showToast('Access denied: Unauthorized role', 'error');
+                return;
+            }
+
             localStorage.setItem('isAuthenticated', 'true');
             showToast('Login successful!', 'success');
             navigate('/');
-        } else {
-            showToast('Please enter valid credentials', 'error');
+        } catch (error: any) {
+            showToast(error.message || 'Login failed', 'error');
         }
     };
 
