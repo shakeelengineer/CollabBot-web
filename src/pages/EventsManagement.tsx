@@ -62,6 +62,129 @@ const blankForm = () => ({
 
 type EventForm = ReturnType<typeof blankForm>;
 
+// ─── Shared form fields component ───────────────────────────────────────────
+// Moved outside to prevent re-mounting and focus loss on every keystroke
+interface EventFormFieldsProps {
+    form: EventForm;
+    setForm: (form: EventForm) => void;
+}
+
+const EventFormFields: React.FC<EventFormFieldsProps> = ({ form, setForm }) => (
+    <>
+        <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Event Title *</label>
+            <input
+                type="text"
+                required
+                value={form.title}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
+                className="input-field"
+                placeholder="e.g. Alumni Networking Night"
+            />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Event Date *</label>
+                <input
+                    type="date"
+                    required
+                    value={form.event_date}
+                    onChange={(e) => setForm({ ...form, event_date: e.target.value })}
+                    className="input-field"
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Total Seats</label>
+                <input
+                    type="number"
+                    min={1}
+                    value={form.total_seats}
+                    onChange={(e) => setForm({ ...form, total_seats: Number(e.target.value) })}
+                    className="input-field"
+                />
+            </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
+                <input
+                    type="time"
+                    value={form.start_time}
+                    onChange={(e) => setForm({ ...form, start_time: e.target.value })}
+                    className="input-field"
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
+                <input
+                    type="time"
+                    value={form.end_time}
+                    onChange={(e) => setForm({ ...form, end_time: e.target.value })}
+                    className="input-field"
+                />
+            </div>
+        </div>
+
+        <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Venue</label>
+            <input
+                type="text"
+                value={form.venue}
+                onChange={(e) => setForm({ ...form, venue: e.target.value })}
+                className="input-field"
+                placeholder="e.g. Auditorium A, Block B"
+            />
+        </div>
+
+        <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <textarea
+                rows={3}
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                className="input-field"
+                placeholder="Describe the event..."
+            />
+        </div>
+
+        <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Image URL (optional)</label>
+            <input
+                type="url"
+                value={form.image_url}
+                onChange={(e) => setForm({ ...form, image_url: e.target.value })}
+                className="input-field"
+                placeholder="https://..."
+            />
+            {/* Live preview */}
+            {form.image_url && form.image_url.trim() !== '' && (
+                <div className="mt-2 rounded-lg overflow-hidden border border-gray-200 h-32 bg-gray-50 flex items-center justify-center">
+                    <img
+                        src={form.image_url}
+                        alt="Preview"
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                            const parent = (e.target as HTMLImageElement).parentElement;
+                            if (parent && !parent.querySelector('p')) {
+                                const msg = document.createElement('p');
+                                msg.className = 'text-xs text-gray-400';
+                                msg.textContent = '⚠️ Image failed to load — check the URL';
+                                parent.appendChild(msg);
+                            }
+                        }}
+                        onLoad={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'block';
+                        }}
+                    />
+                </div>
+            )}
+        </div>
+    </>
+);
+
 // ─── Component ────────────────────────────────────────────────────────────────
 const EventsManagement: React.FC = () => {
     const [events, setEvents] = useState<EventRow[]>([]);
@@ -282,99 +405,6 @@ const EventsManagement: React.FC = () => {
         { key: 'rejected', label: 'Rejected', count: rejected },
     ] as const;
 
-    // ── Shared form fields ─────────────────────────────────────────────────────
-    const EventFormFields = () => (
-        <>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Event Title *</label>
-                <input
-                    type="text"
-                    required
-                    value={form.title}
-                    onChange={(e) => setForm({ ...form, title: e.target.value })}
-                    className="input-field"
-                    placeholder="e.g. Alumni Networking Night"
-                />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Event Date *</label>
-                    <input
-                        type="date"
-                        required
-                        value={form.event_date}
-                        onChange={(e) => setForm({ ...form, event_date: e.target.value })}
-                        className="input-field"
-                    />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Total Seats</label>
-                    <input
-                        type="number"
-                        min={1}
-                        value={form.total_seats}
-                        onChange={(e) => setForm({ ...form, total_seats: Number(e.target.value) })}
-                        className="input-field"
-                    />
-                </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
-                    <input
-                        type="time"
-                        value={form.start_time}
-                        onChange={(e) => setForm({ ...form, start_time: e.target.value })}
-                        className="input-field"
-                    />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
-                    <input
-                        type="time"
-                        value={form.end_time}
-                        onChange={(e) => setForm({ ...form, end_time: e.target.value })}
-                        className="input-field"
-                    />
-                </div>
-            </div>
-
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Venue</label>
-                <input
-                    type="text"
-                    value={form.venue}
-                    onChange={(e) => setForm({ ...form, venue: e.target.value })}
-                    className="input-field"
-                    placeholder="e.g. Auditorium A, Block B"
-                />
-            </div>
-
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <textarea
-                    rows={3}
-                    value={form.description}
-                    onChange={(e) => setForm({ ...form, description: e.target.value })}
-                    className="input-field"
-                    placeholder="Describe the event..."
-                />
-            </div>
-
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Image URL (optional)</label>
-                <input
-                    type="url"
-                    value={form.image_url}
-                    onChange={(e) => setForm({ ...form, image_url: e.target.value })}
-                    className="input-field"
-                    placeholder="https://..."
-                />
-            </div>
-        </>
-    );
 
     // ── Render ─────────────────────────────────────────────────────────────────
     return (
@@ -624,7 +654,7 @@ const EventsManagement: React.FC = () => {
                         <Check className="w-4 h-4 shrink-0" />
                         Admin-created events are automatically approved and visible to users.
                     </div>
-                    <EventFormFields />
+                    <EventFormFields form={form} setForm={setForm} />
                     <div className="flex gap-3 pt-2">
                         <button type="submit" disabled={isSaving} className="btn-primary flex-1 flex items-center justify-center gap-2">
                             {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
@@ -642,7 +672,7 @@ const EventsManagement: React.FC = () => {
             ══════════════════════════════════════════════════════════════════ */}
             <Modal isOpen={isEditOpen} onClose={() => setIsEditOpen(false)} title="Edit Event" size="lg">
                 <form onSubmit={handleEdit} className="space-y-4">
-                    <EventFormFields />
+                    <EventFormFields form={form} setForm={setForm} />
                     <div className="flex gap-3 pt-2">
                         <button type="submit" disabled={isSaving} className="btn-primary flex-1 flex items-center justify-center gap-2">
                             {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
