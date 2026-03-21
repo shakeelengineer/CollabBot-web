@@ -13,6 +13,7 @@ const Dashboard: React.FC = () => {
         pendingApprovals: 0,
         weeklyEngagement: 0
     });
+    const [distribution, setDistribution] = useState(userDistribution);
 
     useEffect(() => {
         fetchStats();
@@ -33,12 +34,23 @@ const Dashboard: React.FC = () => {
                 .select('*', { count: 'exact', head: true })
                 .is('deleted_at', null);
 
+            // Fetch counts for distribution
+            const { count: juniorCount } = await supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'Junior').is('deleted_at', null);
+            const { count: seniorCount } = await supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'Senior').is('deleted_at', null);
+            const { count: alumniCount } = await supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'Alumni').is('deleted_at', null);
+
             setStats({
                 totalUsers: totalUsers ?? 0,
                 activeMentorships: 12,
                 pendingApprovals: pendingEvents ?? 0,
                 weeklyEngagement: 85
             });
+
+            setDistribution([
+                { name: 'Juniors', value: juniorCount ?? 0, fill: '#3b82f6' },
+                { name: 'Seniors', value: seniorCount ?? 0, fill: '#6366f1' },
+                { name: 'Alumni', value: alumniCount ?? 0, fill: '#8b5cf6' },
+            ]);
         } catch (error) {
             console.error('Error fetching dashboard stats:', error);
         }
@@ -88,7 +100,7 @@ const Dashboard: React.FC = () => {
                     <ResponsiveContainer width="100%" height={300}>
                         <PieChart>
                             <Pie
-                                data={userDistribution}
+                                data={distribution}
                                 cx="50%"
                                 cy="50%"
                                 labelLine={false}
@@ -97,7 +109,7 @@ const Dashboard: React.FC = () => {
                                 fill="#8884d8"
                                 dataKey="value"
                             >
-                                {userDistribution.map((entry, index) => (
+                                {distribution.map((entry, index) => (
                                     <Cell key={`cell-${index}`} fill={entry.fill} />
                                 ))}
                             </Pie>
@@ -105,7 +117,7 @@ const Dashboard: React.FC = () => {
                         </PieChart>
                     </ResponsiveContainer>
                     <div className="flex justify-center gap-6 mt-4">
-                        {userDistribution.map((item) => (
+                        {distribution.map((item) => (
                             <div key={item.name} className="flex items-center gap-2">
                                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.fill }}></div>
                                 <span className="text-sm text-gray-600">{item.name}: {item.value}</span>
