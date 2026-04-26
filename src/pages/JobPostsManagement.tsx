@@ -1,36 +1,104 @@
-import React, { useState } from 'react';
-import { Eye, Check, X, Trash2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { RefreshCw, Loader2, Eye, Check, X, Trash2 } from 'lucide-react';
 import DataTable from '@/components/DataTable';
 import StatusBadge from '@/components/StatusBadge';
 import Modal from '@/components/Modal';
 import { useToast } from '@/components/Toast';
-import { mockJobPosts } from '@/data/mockData';
-import { JobPost, JobStatus } from '@/types';
+import { JobStatus } from '@/types';
 import { formatDate } from '@/lib/utils';
+import { supabase } from '@/lib/supabase';
 
 const JobPostsManagement: React.FC = () => {
+    const [jobs, setJobs] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
     const [selectedTab, setSelectedTab] = useState<'All' | JobStatus>('All');
-    const [selectedJob, setSelectedJob] = useState<JobPost | null>(null);
+    const [selectedJob, setSelectedJob] = useState<any | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const { showToast } = useToast();
 
+    useEffect(() => {
+        fetchJobs();
+    }, []);
+
+    const fetchJobs = async () => {
+        setLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('jobs')
+                .select(`
+                    *,
+                    poster:users!poster_id(full_name)
+                `)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+
+            if (data) {
+                const mapped = data.map(j => ({
+                    ...j,
+                    postedBy: j.poster?.full_name || 'System',
+                    datePosted: j.created_at,
+                    status: j.status || 'Approved' // Fallback if status column doesn't exist
+                }));
+                setJobs(mapped);
+            }
+        } catch (error: any) {
+            showToast(error.message || 'Error fetching jobs', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const filteredJobs = selectedTab === 'All'
-        ? mockJobPosts
-        : mockJobPosts.filter(job => job.status === selectedTab);
+        ? jobs
+        : jobs.filter(job => job.status === selectedTab);
 
-    const handleApprove = (job: JobPost) => {
-        showToast(`Job post "${job.title}" has been approved`, 'success');
-        setIsModalOpen(false);
+    const handleApprove = async (job: any) => {
+        try {
+            const { error } = await supabase
+                .from('jobs')
+                .update({ status: 'Approved' })
+                .eq('id', job.id);
+            
+            if (error) throw error;
+            showToast(`Job post "${job.title}" has been approved`, 'success');
+            setIsModalOpen(false);
+            fetchJobs();
+        } catch (error: any) {
+            showToast(error.message || 'Approval failed', 'error');
+        }
     };
 
-    const handleReject = (job: JobPost) => {
-        showToast(`Job post "${job.title}" has been rejected`, 'warning');
-        setIsModalOpen(false);
+    const handleReject = async (job: any) => {
+        try {
+            const { error } = await supabase
+                .from('jobs')
+                .update({ status: 'Rejected' })
+                .eq('id', job.id);
+            
+            if (error) throw error;
+            showToast(`Job post "${job.title}" has been rejected`, 'warning');
+            setIsModalOpen(false);
+            fetchJobs();
+        } catch (error: any) {
+            showToast(error.message || 'Rejection failed', 'error');
+        }
     };
 
-    const handleDelete = (job: JobPost) => {
+    const handleDelete = async (job: any) => {
         if (confirm(`Are you sure you want to delete "${job.title}"?`)) {
-            showToast(`Job post "${job.title}" has been deleted`, 'success');
+            try {
+                const { error } = await supabase
+                    .from('jobs')
+                    .delete()
+                    .eq('id', job.id);
+                
+                if (error) throw error;
+                showToast(`Job post "${job.title}" has been deleted`, 'success');
+                fetchJobs();
+            } catch (error: any) {
+                showToast(error.message || 'Delete failed', 'error');
+            }
         }
     };
 
@@ -38,7 +106,7 @@ const JobPostsManagement: React.FC = () => {
         {
             key: 'title',
             label: 'Job Title',
-            render: (job: JobPost) => (
+            render: (job: any) => (
                 <div>
                     <p className="font-medium text-gray-900">{job.title}</p>
                     <p className="text-xs text-gray-500">{job.company}</p>
@@ -56,17 +124,17 @@ const JobPostsManagement: React.FC = () => {
         {
             key: 'status',
             label: 'Status',
-            render: (job: JobPost) => <StatusBadge variant={job.status} />,
+            render: (job: any) => <StatusBadge variant={job.status} />,
         },
         {
             key: 'datePosted',
             label: 'Date Posted',
-            render: (job: JobPost) => formatDate(job.datePosted),
+            render: (job: any) => formatDate(job.datePosted),
         },
         {
             key: 'actions',
             label: 'Actions',
-            render: (job: JobPost) => (
+            render: (job: any) => (
                 <div className="flex items-center gap-2">
                     <button
                         onClick={() => {
@@ -111,33 +179,43 @@ const JobPostsManagement: React.FC = () => {
     return (
         <div className="space-y-6">
             {/* Page Header */}
-            <div>
-                <h1 className="text-3xl font-bold text-gray-900">Job Posts Management</h1>
-                <p className="text-gray-600 mt-1">Review and manage all job postings</p>
+            <div className="flex justify-between items-start">
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-900">Job Posts Management</h1>
+                    <p className="text-gray-600 mt-1">Review and manage all job postings</p>
+                </div>
+                <button 
+                    onClick={fetchJobs}
+                    disabled={loading}
+                    className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50"
+                >
+                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                    Refresh
+                </button>
             </div>
 
             {/* Stats */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
                     <p className="text-sm text-gray-600">Total Posts</p>
-                    <p className="text-2xl font-bold text-gray-900 mt-1">{mockJobPosts.length}</p>
+                    <p className="text-2xl font-bold text-gray-900 mt-1">{jobs.length}</p>
                 </div>
                 <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
                     <p className="text-sm text-gray-600">Pending</p>
                     <p className="text-2xl font-bold text-yellow-600 mt-1">
-                        {mockJobPosts.filter(j => j.status === 'Pending').length}
+                        {jobs.filter(j => j.status === 'Pending').length}
                     </p>
                 </div>
                 <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
                     <p className="text-sm text-gray-600">Approved</p>
                     <p className="text-2xl font-bold text-green-600 mt-1">
-                        {mockJobPosts.filter(j => j.status === 'Approved').length}
+                        {jobs.filter(j => j.status === 'Approved').length}
                     </p>
                 </div>
                 <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
                     <p className="text-sm text-gray-600">Rejected</p>
                     <p className="text-2xl font-bold text-red-600 mt-1">
-                        {mockJobPosts.filter(j => j.status === 'Rejected').length}
+                        {jobs.filter(j => j.status === 'Rejected').length}
                     </p>
                 </div>
             </div>

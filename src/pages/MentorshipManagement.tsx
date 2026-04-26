@@ -1,23 +1,69 @@
-import React, { useState } from 'react';
-import { Eye, Link as LinkIcon, XCircle } from 'lucide-react';
-import { UserCheck, CheckCircle, Clock as ClockIcon } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { RefreshCw, Loader2, Eye, Link as LinkIcon, XCircle, UserCheck, CheckCircle, Clock as ClockIcon, Save } from 'lucide-react';
 import DataTable from '@/components/DataTable';
 import StatusBadge from '@/components/StatusBadge';
 import StatCard from '@/components/StatCard';
 import Modal from '@/components/Modal';
 import { useToast } from '@/components/Toast';
-import { mockMentorships } from '@/data/mockData';
-import { MentorshipConnection } from '@/types';
 import { formatDate } from '@/lib/utils';
+import { supabase } from '@/lib/supabase';
 
 const MentorshipManagement: React.FC = () => {
-    const [selectedMentorship, setSelectedMentorship] = useState<MentorshipConnection | null>(null);
+    const [mentorships, setMentorships] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [selectedMentorship, setSelectedMentorship] = useState<any | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const { showToast } = useToast();
 
-    const handleEndConnection = (mentorship: MentorshipConnection) => {
-        if (confirm(`Are you sure you want to end the mentorship between ${mentorship.mentor} and ${mentorship.mentee}?`)) {
-            showToast('Mentorship connection has been ended', 'warning');
+    useEffect(() => {
+        fetchMentorships();
+    }, []);
+
+    const fetchMentorships = async () => {
+        setLoading(true);
+        try {
+            // We'll define "Mentorship" as a Senior/Alumni answering a Junior's question
+            const { data, error } = await supabase
+                .from('answers')
+                .select(`
+                    id,
+                    content,
+                    created_at,
+                    is_accepted,
+                    author:users!author_id(full_name, role),
+                    question:questions!question_id(
+                        title,
+                        asker:users!author_id(full_name, role)
+                    )
+                `)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+
+            if (data) {
+                const mapped = data.map(a => ({
+                    id: a.id,
+                    mentor: a.author?.full_name || 'System',
+                    mentee: a.question?.asker?.full_name || 'System',
+                    connectionDate: a.created_at,
+                    lastInteraction: a.created_at,
+                    status: a.is_accepted ? 'Completed' : 'Active',
+                    topic: a.question?.title || 'General Discussion',
+                    mentorRole: a.author?.role,
+                    menteeRole: a.question?.asker?.role
+                }));
+                setMentorships(mapped);
+            }
+        } catch (error: any) {
+            showToast(error.message || 'Error fetching mentorship data', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleEndConnection = async (mentorship: any) => {
+        if (confirm(`Are you sure you want to end the mentorship session regarding "${mentorship.topic}"?`)) {
+            showToast('Mentorship session closed', 'warning');
             setIsModalOpen(false);
         }
     };
@@ -26,46 +72,52 @@ const MentorshipManagement: React.FC = () => {
         {
             key: 'mentor',
             label: 'Mentor',
-            render: (m: MentorshipConnection) => (
+            render: (m: any) => (
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
                         <span className="text-indigo-700 font-medium">{m.mentor.charAt(0)}</span>
                     </div>
-                    <span className="font-medium text-gray-900">{m.mentor}</span>
+                    <div>
+                        <p className="font-medium text-gray-900">{m.mentor}</p>
+                        <p className="text-[10px] text-indigo-600 font-bold uppercase">{m.mentorRole}</p>
+                    </div>
                 </div>
             ),
         },
         {
             key: 'mentee',
             label: 'Mentee',
-            render: (m: MentorshipConnection) => (
+            render: (m: any) => (
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
                         <span className="text-blue-700 font-medium">{m.mentee.charAt(0)}</span>
                     </div>
-                    <span className="font-medium text-gray-900">{m.mentee}</span>
+                    <div>
+                        <p className="font-medium text-gray-900">{m.mentee}</p>
+                        <p className="text-[10px] text-blue-600 font-bold uppercase">{m.menteeRole}</p>
+                    </div>
                 </div>
             ),
         },
         {
+            key: 'topic',
+            label: 'Topic',
+            render: (m: any) => <span className="text-sm text-gray-600 truncate max-w-[150px] inline-block">{m.topic}</span>
+        },
+        {
             key: 'connectionDate',
-            label: 'Connection Date',
-            render: (m: MentorshipConnection) => formatDate(m.connectionDate),
+            label: 'Date',
+            render: (m: any) => formatDate(m.connectionDate),
         },
         {
             key: 'status',
             label: 'Status',
-            render: (m: MentorshipConnection) => <StatusBadge variant={m.status} />,
-        },
-        {
-            key: 'lastInteraction',
-            label: 'Last Interaction',
-            render: (m: MentorshipConnection) => formatDate(m.lastInteraction),
+            render: (m: any) => <StatusBadge variant={m.status} />,
         },
         {
             key: 'actions',
             label: 'Actions',
-            render: (m: MentorshipConnection) => (
+            render: (m: any) => (
                 <div className="flex items-center gap-2">
                     <button
                         onClick={() => {
@@ -77,15 +129,6 @@ const MentorshipManagement: React.FC = () => {
                     >
                         <Eye className="w-4 h-4 text-gray-600" />
                     </button>
-                    {m.status === 'Active' && (
-                        <button
-                            onClick={() => handleEndConnection(m)}
-                            className="p-2 hover:bg-red-50 rounded-lg transition-colors"
-                            title="End Connection"
-                        >
-                            <XCircle className="w-4 h-4 text-red-600" />
-                        </button>
-                    )}
                 </div>
             ),
         },
@@ -94,37 +137,48 @@ const MentorshipManagement: React.FC = () => {
     return (
         <div className="space-y-6">
             {/* Page Header */}
-            <div>
-                <h1 className="text-3xl font-bold text-gray-900">Mentorship Connections</h1>
-                <p className="text-gray-600 mt-1">Monitor and manage mentorship relationships</p>
+            <div className="flex justify-between items-center">
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-900">Mentorship Activity</h1>
+                    <p className="text-gray-600 mt-1">Monitor all mentorship interactions across the platform</p>
+                </div>
+                <button 
+                    onClick={fetchMentorships}
+                    disabled={loading}
+                    className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50"
+                >
+                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                    Refresh
+                </button>
             </div>
 
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <StatCard
-                    title="Active Pairs"
-                    value={mockMentorships.filter(m => m.status === 'Active').length}
+                    title="Active Sessions"
+                    value={mentorships.filter(m => m.status === 'Active').length}
                     icon={UserCheck}
                 />
                 <StatCard
-                    title="Completed"
-                    value={mockMentorships.filter(m => m.status === 'Completed').length}
+                    title="Solved Issues"
+                    value={mentorships.filter(m => m.status === 'Completed').length}
                     icon={CheckCircle}
                 />
                 <StatCard
-                    title="Pending Requests"
-                    value={mockMentorships.filter(m => m.status === 'Pending').length}
+                    title="Total Interactions"
+                    value={mentorships.length}
                     icon={ClockIcon}
                 />
             </div>
 
             {/* Data Table */}
             <DataTable
-                data={mockMentorships}
+                data={mentorships}
                 columns={columns}
-                searchPlaceholder="Search mentorships..."
-                emptyMessage="No mentorship connections found"
+                searchPlaceholder="Search by mentor or mentee..."
+                emptyMessage="No mentorship activity found"
             />
+
 
             {/* Mentorship Detail Modal */}
             <Modal

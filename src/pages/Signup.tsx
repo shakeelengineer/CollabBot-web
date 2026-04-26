@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { UserPlus, Mail, Lock, Eye, EyeOff, User } from 'lucide-react';
+import { UserPlus, Mail, Lock, Eye, EyeOff, User, RefreshCw } from 'lucide-react';
 import { useToast } from '@/components/Toast';
+
+import { supabase } from '@/lib/supabase';
 
 const Signup: React.FC = () => {
     const navigate = useNavigate();
     const { showToast } = useToast();
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
     const [formData, setFormData] = useState({
         name: '',
         email: '',
@@ -15,22 +18,54 @@ const Signup: React.FC = () => {
         confirmPassword: '',
     });
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setIsLoading(true);
 
         if (formData.password !== formData.confirmPassword) {
             showToast('Passwords do not match', 'error');
+            setIsLoading(false);
             return;
         }
 
         if (formData.password.length < 6) {
             showToast('Password must be at least 6 characters', 'error');
+            setIsLoading(false);
             return;
         }
 
-        // Demo registration - replace with real registration later
-        showToast('Account created successfully!', 'success');
-        navigate('/login');
+        try {
+            // 1. Create Auth User
+            const { data: authData, error: authError } = await supabase.auth.signUp({
+                email: formData.email,
+                password: formData.password,
+            });
+
+            if (authError) throw authError;
+
+            if (authData.user) {
+                // 2. Insert into public.users table
+                const { error: profileError } = await supabase
+                    .from('users')
+                    .insert({
+                        id: authData.user.id,
+                        full_name: formData.name,
+                        email: formData.email,
+                        role: 'Admin', // Default role for admin portal signup
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    });
+
+                if (profileError) throw profileError;
+            }
+
+            showToast('Account created successfully! Please log in.', 'success');
+            navigate('/login');
+        } catch (error: any) {
+            showToast(error.message || 'Signup failed', 'error');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -169,14 +204,18 @@ const Signup: React.FC = () => {
                                 </a>
                             </label>
                         </div>
-
                         {/* Submit Button */}
                         <button
                             type="submit"
-                            className="w-full btn-primary flex items-center justify-center gap-2 py-3"
+                            disabled={isLoading}
+                            className="w-full btn-primary flex items-center justify-center gap-2 py-3 disabled:opacity-50"
                         >
-                            <UserPlus className="w-5 h-5" />
-                            Create Account
+                            {isLoading ? (
+                                <RefreshCw className="w-5 h-5 animate-spin" />
+                            ) : (
+                                <UserPlus className="w-5 h-5" />
+                            )}
+                            {isLoading ? 'Creating Account...' : 'Create Account'}
                         </button>
                     </form>
 
