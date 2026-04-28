@@ -269,23 +269,26 @@ const EventsManagement: React.FC = () => {
     // ── Update status (Approve / Reject) ──────────────────────────────────────
     const handleUpdateStatus = async (eventId: string, newStatus: StatusId) => {
         try {
-            const { error } = await supabase
+            const { error, data } = await supabase
                 .from('events')
                 .update({ status_id: newStatus })
-                .eq('id', eventId);
+                .eq('id', eventId)
+                .select();
+            
             if (error) throw error;
+
+            if (!data || data.length === 0) {
+                showToast('Action failed: You may not have permission to update this event.', 'error');
+                return;
+            }
 
             showToast(
                 newStatus === STATUS.APPROVED ? '✅ Event Approved and Published Successfully!' : '❌ Event Rejected.',
                 newStatus === STATUS.APPROVED ? 'success' : 'error'
             );
-            // Optimistic update
-            setEvents((prev) =>
-                prev.map((e) => (e.id === eventId ? { ...e, status_id: newStatus } : e))
-            );
-            if (selectedEvent?.id === eventId) {
-                setSelectedEvent((prev) => prev ? { ...prev, status_id: newStatus } : prev);
-            }
+            
+            // Fetch fresh data to ensure UI is perfectly synced with DB
+            fetchEvents();
         } catch (err: any) {
             showToast(`Failed: ${err.message}`, 'error');
         }

@@ -170,18 +170,10 @@ const Dashboard: React.FC = () => {
     };
 
     const fetchPendingApprovals = async () => {
-        const { data: pendingEvents } = await supabase
-            .from('events')
-            .select('id, title, created_at')
-            .eq('status_id', 1)
-            .is('deleted_at', null)
-            .order('created_at', { ascending: false });
-
-        const { data: pendingReports } = await supabase
-            .from('issues') // Assuming issues are reports
-            .select('id, title, created_at')
-            .eq('status_id', 1)
-            .is('deleted_at', null);
+        const [ { data: pendingEvents }, { data: pendingJobs } ] = await Promise.all([
+            supabase.from('events').select('id, title, created_at').eq('status_id', 1).is('deleted_at', null).order('created_at', { ascending: false }),
+            supabase.from('jobs').select('id, title, created_at').eq('status', 'Pending').order('created_at', { ascending: false })
+        ]);
 
         const items: PendingItem[] = [];
 
@@ -194,12 +186,12 @@ const Dashboard: React.FC = () => {
             });
         });
 
-        pendingReports?.forEach(r => {
+        pendingJobs?.forEach(j => {
             items.push({
-                id: r.id,
-                title: r.title,
-                type: 'Report',
-                timestamp: r.created_at || ''
+                id: j.id,
+                title: j.title,
+                type: 'Job',
+                timestamp: j.created_at || ''
             });
         });
 
@@ -236,35 +228,42 @@ const Dashboard: React.FC = () => {
         setStats(prev => ({ ...prev, newUsersThisWeek: users?.length || 0 }));
     };
 
-    const handleApproveEvent = async (id: string) => {
+    const handleApproveItem = async (id: string, type: string) => {
         try {
-            const { error } = await supabase
-                .from('events')
-                .update({ status_id: 2 }) // Assuming 2 is approved
-                .eq('id', id);
+            const table = type === 'Event' ? 'events' : 'jobs';
+            const payload = type === 'Event' ? { status_id: 2 } : { status: 'Approved' };
+            
+            const { error, data } = await supabase
+                .from(table)
+                .update(payload)
+                .eq('id', id)
+                .select();
             
             if (error) throw error;
-            showToast('The event has been successfully approved and is now live on the platform.', 'success');
+            showToast(`${type} approved successfully`, 'success');
             fetchPendingApprovals();
-            fetchStatsAndDistribution(); // Refresh the stat cards
+            fetchStatsAndDistribution();
         } catch (error: any) {
-            showToast(error.message || 'Error approving event', 'error');
+            showToast(error.message || `Error approving ${type}`, 'error');
         }
     };
 
-    const handleRejectEvent = async (id: string) => {
+    const handleRejectItem = async (id: string, type: string) => {
         try {
+            const table = type === 'Event' ? 'events' : 'jobs';
+            const payload = type === 'Event' ? { status_id: 3 } : { status: 'Rejected' };
+            
             const { error } = await supabase
-                .from('events')
-                .update({ deleted_at: new Date().toISOString() })
+                .from(table)
+                .update(payload)
                 .eq('id', id);
             
             if (error) throw error;
-            showToast('Event rejected', 'warning');
+            showToast(`${type} rejected`, 'warning');
             fetchPendingApprovals();
-            fetchStatsAndDistribution(); // Refresh the stat cards
+            fetchStatsAndDistribution();
         } catch (error: any) {
-            showToast(error.message || 'Error rejecting event', 'error');
+            showToast(error.message || `Error rejecting ${type}`, 'error');
         }
     };
 
@@ -422,13 +421,13 @@ const Dashboard: React.FC = () => {
                                     </div>
                                     <div className="flex gap-2">
                                         <button 
-                                            onClick={() => item.type === 'Event' && handleApproveEvent(item.id)}
+                                            onClick={() => handleApproveItem(item.id, item.type)}
                                             className="px-3 py-1 text-xs bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors"
                                         >
                                             Approve
                                         </button>
                                         <button 
-                                            onClick={() => item.type === 'Event' && handleRejectEvent(item.id)}
+                                            onClick={() => handleRejectItem(item.id, item.type)}
                                             className="px-3 py-1 text-xs bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
                                         >
                                             Reject
