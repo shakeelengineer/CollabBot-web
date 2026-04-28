@@ -217,7 +217,7 @@ const EventsManagement: React.FC = () => {
         try {
             const { data, error } = await supabase
                 .from('events')
-                .select('*, users(full_name)')
+                .select('*, creator:users!creator_id(full_name)')
                 .is('deleted_at', null)
                 .order('created_at', { ascending: false });
 
@@ -237,7 +237,7 @@ const EventsManagement: React.FC = () => {
                 image_url: e.image_url ?? null,
                 creator_id: e.creator_id,
                 created_at: e.created_at,
-                creator_name: e.users?.full_name ?? 'Unknown',
+                creator_name: e.creator?.full_name ?? 'Unknown',
             }));
 
             setEvents(rows);
@@ -276,7 +276,7 @@ const EventsManagement: React.FC = () => {
             if (error) throw error;
 
             showToast(
-                newStatus === STATUS.APPROVED ? '✅ Event approved!' : '❌ Event rejected.',
+                newStatus === STATUS.APPROVED ? '✅ Event Approved and Published Successfully!' : '❌ Event Rejected.',
                 newStatus === STATUS.APPROVED ? 'success' : 'error'
             );
             // Optimistic update

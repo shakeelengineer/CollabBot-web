@@ -137,7 +137,7 @@ const Dashboard: React.FC = () => {
                 title, 
                 created_at, 
                 creator_id, 
-                creator:users!fk_events_creator(full_name)
+                creator:users!creator_id(full_name)
             `)
             .order('created_at', { ascending: false })
             .limit(5);
@@ -244,8 +244,9 @@ const Dashboard: React.FC = () => {
                 .eq('id', id);
             
             if (error) throw error;
-            showToast('Event approved successfully', 'success');
+            showToast('The event has been successfully approved and is now live on the platform.', 'success');
             fetchPendingApprovals();
+            fetchStatsAndDistribution(); // Refresh the stat cards
         } catch (error: any) {
             showToast(error.message || 'Error approving event', 'error');
         }
@@ -261,6 +262,7 @@ const Dashboard: React.FC = () => {
             if (error) throw error;
             showToast('Event rejected', 'warning');
             fetchPendingApprovals();
+            fetchStatsAndDistribution(); // Refresh the stat cards
         } catch (error: any) {
             showToast(error.message || 'Error rejecting event', 'error');
         }

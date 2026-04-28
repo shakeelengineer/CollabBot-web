@@ -62,9 +62,21 @@ const MentorshipManagement: React.FC = () => {
     };
 
     const handleEndConnection = async (mentorship: any) => {
-        if (confirm(`Are you sure you want to end the mentorship session regarding "${mentorship.topic}"?`)) {
-            showToast('Mentorship session closed', 'warning');
-            setIsModalOpen(false);
+        if (confirm(`Are you sure you want to end the mentorship session regarding "${mentorship.topic}"? This will remove the recorded interaction.`)) {
+            try {
+                const { error } = await supabase
+                    .from('answers')
+                    .delete()
+                    .eq('id', mentorship.id);
+
+                if (error) throw error;
+
+                showToast('Mentorship connection ended successfully', 'success');
+                setIsModalOpen(false);
+                fetchMentorships();
+            } catch (error: any) {
+                showToast(error.message || 'Failed to end connection', 'error');
+            }
         }
     };
 
