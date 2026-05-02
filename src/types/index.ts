@@ -28,12 +28,16 @@ export interface JobPost {
 
 export interface Report {
     id: string;
-    reportedBy: string;
-    reportedAgainst: string;
-    type: string;
-    status: ReportStatus;
-    date: string;
-    description: string;
+    reporter_id: string;
+    target_user_id?: string;
+    target_content_id?: string;
+    content_type: string;
+    reason: string;
+    description?: string;
+    status: 'pending' | 'resolved' | 'dismissed';
+    created_at: string;
+    reporter?: { full_name: string };
+    target?: { full_name: string };
 }
 
 export interface Event {
