@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Eye, Flag, CheckCircle, XCircle, AlertTriangle, User, MessageSquare, HelpCircle } from 'lucide-react';
+import { RefreshCw, Eye, Flag, CheckCircle, XCircle, AlertTriangle, User, HelpCircle, UserCheck } from 'lucide-react';
 import DataTable from '@/components/DataTable';
 import StatusBadge from '@/components/StatusBadge';
 import StatCard from '@/components/StatCard';
@@ -23,37 +23,46 @@ const ReportsManagement: React.FC = () => {
     const fetchReports = async () => {
         setLoading(true);
         try {
-            // Fetch Reports with joined user data
             const { data, error } = await supabase
                 .from('reports')
                 .select(`
                     *,
                     reporter:users!reporter_id(full_name),
-                    target:users!target_user_id(full_name)
+                    target:users!target_user_id(full_name, status)
                 `)
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
 
             setReports(data || []);
-
-            // Calculate Stats
-            const pending = data?.filter(r => r.status === 'pending').length || 0;
-            const resolved = data?.filter(r => r.status === 'resolved').length || 0;
-            const urgent = data?.filter(r => r.reason.includes('Harassment') || r.reason.includes('Scam')).length || 0;
-
-            setStats({
-                total: data?.length || 0,
-                pending,
-                resolved,
-                urgent
-            });
+            calculateStats(data || []);
         } catch (error: any) {
             showToast('Failed to fetch reports', 'error');
-            console.error('Error fetching reports:', error);
+            console.error('Fetch error:', error);
         } finally {
             setLoading(false);
         }
+    };
+
+    const calculateStats = (data: any[]) => {
+        const pending = data.filter(r => r.status === 'pending').length;
+        const resolved = data.filter(r => r.status === 'resolved' || r.status === 'dismissed').length;
+        
+        // URGENT: Harassment, Academic Dishonesty, and Scams are prioritized
+        const urgent = data.filter(r => 
+            r.status === 'pending' && (
+                r.reason.includes('Harassment') || 
+                r.reason.includes('Dishonesty') || 
+                r.reason.includes('Plagiarism')
+            )
+        ).length;
+
+        setStats({
+            total: data.length,
+            pending,
+            resolved,
+            urgent
+        });
     };
 
     const handleUpdateStatus = async (reportId: string, newStatus: string) => {
@@ -63,13 +72,55 @@ const ReportsManagement: React.FC = () => {
                 .update({ status: newStatus })
                 .eq('id', reportId);
 
-            if (error) throw error;
+            if (error) {
+                console.error('Update failed:', error);
+                showToast(`Database Error: ${error.message}`, 'error');
+                return;
+            }
 
-            showToast(`Report marked as ${newStatus}`, 'success');
+            // Update local state instantly
+            const updatedReports = reports.map(r => 
+                r.id === reportId ? { ...r, status: newStatus } : r
+            );
+            setReports(updatedReports);
+            calculateStats(updatedReports);
+
+            showToast(`Report ${newStatus} saved to database`, 'success');
+            setIsModalOpen(false);
+        } catch (error: any) {
+            showToast('Failed to connect to database', 'error');
+        }
+    };
+
+    const handleToggleBan = async (userId: string, currentStatus: string, reportId: string) => {
+        if (!userId) return;
+        const isBanning = currentStatus !== 'Banned';
+        const action = isBanning ? 'BAN' : 'UNBAN';
+        
+        if (!window.confirm(`Confirm: ${action} this user?`)) return;
+        
+        try {
+            // 1. Update user status
+            const { error: userError } = await supabase
+                .from('users')
+                .update({ status: isBanning ? 'Banned' : 'Active' })
+                .eq('id', userId);
+
+            if (userError) throw userError;
+
+            // 2. Resolve the report
+            const { error: reportError } = await supabase
+                .from('reports')
+                .update({ status: 'resolved' })
+                .eq('id', reportId);
+
+            if (reportError) throw reportError;
+
+            showToast(`User ${isBanning ? 'Banned' : 'Restored'} and database updated`, 'success');
             setIsModalOpen(false);
             fetchReports();
         } catch (error: any) {
-            showToast('Failed to update report status', 'error');
+            showToast('Action failed. Check database permissions.', 'error');
         }
     };
 
@@ -91,12 +142,21 @@ const ReportsManagement: React.FC = () => {
         {
             key: 'reason',
             label: 'Reason',
-            render: (item: any) => (
-                <div className="flex flex-col">
-                    <span className="font-medium text-gray-900">{item.reason}</span>
-                    <span className="text-xs text-gray-500 truncate max-w-xs">{item.description}</span>
-                </div>
-            )
+            render: (item: any) => {
+                const isUrgent = item.status === 'pending' && (
+                    item.reason.includes('Harassment') || 
+                    item.reason.includes('Dishonesty')
+                );
+                return (
+                    <div className="flex flex-col">
+                        <div className="flex items-center gap-2">
+                            <span className="font-medium text-gray-900">{item.reason}</span>
+                            {isUrgent && <span className="bg-red-100 text-red-600 text-[10px] px-1.5 py-0.5 rounded font-bold">URGENT</span>}
+                        </div>
+                        <span className="text-xs text-gray-500 truncate max-w-xs">{item.description}</span>
+                    </div>
+                );
+            }
         },
         {
             key: 'reporter',
@@ -151,7 +211,6 @@ const ReportsManagement: React.FC = () => {
                 </button>
             </div>
 
-            {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <StatCard title="Total Reports" value={stats.total} icon={Flag} color="blue" />
                 <StatCard title="Pending Review" value={stats.pending} icon={AlertTriangle} color="yellow" />
@@ -159,25 +218,15 @@ const ReportsManagement: React.FC = () => {
                 <StatCard title="Urgent Issues" value={stats.urgent} icon={AlertTriangle} color="red" />
             </div>
 
-            {/* Data Table */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="p-6 border-b border-gray-100 flex justify-between items-center">
-                    <h3 className="font-bold text-gray-900">Active Reports</h3>
-                    <div className="flex gap-2">
-                        <span className="flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-md font-medium">
-                            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span> Live Monitoring
-                        </span>
-                    </div>
-                </div>
                 <DataTable
                     data={reports}
                     columns={columns}
-                    searchPlaceholder="Search reports by reason or user..."
+                    searchPlaceholder="Search reports..."
                     emptyMessage="No reports found"
                 />
             </div>
 
-            {/* Detail Modal */}
             <Modal
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
@@ -186,14 +235,19 @@ const ReportsManagement: React.FC = () => {
             >
                 {selectedReport && (
                     <div className="space-y-6">
-                        <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl">
-                            <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center shadow-sm border border-gray-100">
-                                <Flag className="text-red-500" />
+                        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center shadow-sm border border-gray-100">
+                                    <Flag className="text-red-500" />
+                                </div>
+                                <div>
+                                    <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">Reason</p>
+                                    <h3 className="text-lg font-bold text-gray-900">{selectedReport.reason}</h3>
+                                </div>
                             </div>
-                            <div>
-                                <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">Reason</p>
-                                <h3 className="text-lg font-bold text-gray-900">{selectedReport.reason}</h3>
-                            </div>
+                            {selectedReport.target?.status === 'Banned' && (
+                                <span className="bg-red-100 text-red-700 text-xs px-2 py-1 rounded-full font-bold">BANNED</span>
+                            )}
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
@@ -214,21 +268,46 @@ const ReportsManagement: React.FC = () => {
                             </div>
                         </div>
 
-                        <div className="pt-4 border-t border-gray-100 flex gap-3">
-                            <button 
-                                onClick={() => handleUpdateStatus(selectedReport.id, 'resolved')}
-                                className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-green-700 transition-colors"
-                            >
-                                <CheckCircle className="w-5 h-5" />
-                                Resolve
-                            </button>
-                            <button 
-                                onClick={() => handleUpdateStatus(selectedReport.id, 'dismissed')}
-                                className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-300 transition-colors"
-                            >
-                                <XCircle className="w-5 h-5" />
-                                Dismiss
-                            </button>
+                        <div className="pt-4 border-t border-gray-100 flex flex-col gap-3">
+                            <div className="flex gap-3">
+                                <button 
+                                    onClick={() => handleUpdateStatus(selectedReport.id, 'resolved')}
+                                    className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-green-700 transition-colors"
+                                >
+                                    <CheckCircle className="w-5 h-5" />
+                                    Resolve
+                                </button>
+                                <button 
+                                    onClick={() => handleUpdateStatus(selectedReport.id, 'dismissed')}
+                                    className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-300 transition-colors"
+                                >
+                                    <XCircle className="w-5 h-5" />
+                                    Dismiss
+                                </button>
+                            </div>
+                            
+                            {selectedReport.target_user_id && (
+                                <button 
+                                    onClick={() => handleToggleBan(selectedReport.target_user_id, selectedReport.target?.status, selectedReport.id)}
+                                    className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors ${
+                                        selectedReport.target?.status === 'Banned' 
+                                        ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                                        : 'bg-red-600 text-white hover:bg-red-700'
+                                    }`}
+                                >
+                                    {selectedReport.target?.status === 'Banned' ? (
+                                        <>
+                                            <UserCheck className="w-5 h-5" />
+                                            Unban & Restore Access
+                                        </>
+                                    ) : (
+                                        <>
+                                            <AlertTriangle className="w-5 h-5" />
+                                            Ban Violating User
+                                        </>
+                                    )}
+                                </button>
+                            )}
                         </div>
                     </div>
                 )}
