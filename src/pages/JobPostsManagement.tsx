@@ -27,7 +27,9 @@ const JobPostsManagement: React.FC = () => {
                 .from('jobs')
                 .select(`
                     *,
-                    poster:users!poster_id(full_name)
+                    poster:users!fk_jobs_creator(full_name),
+                    status_info:job_statuses!fk_jobs_status(name),
+                    applications:job_applications(count)
                 `)
                 .order('created_at', { ascending: false });
 
@@ -38,7 +40,8 @@ const JobPostsManagement: React.FC = () => {
                     ...j,
                     postedBy: j.poster?.full_name || 'System',
                     datePosted: j.created_at,
-                    status: j.status || 'Approved' // Fallback if status column doesn't exist
+                    status: j.status_info?.name || 'Pending',
+                    applicationCount: j.applications?.[0]?.count || 0
                 }));
                 setJobs(mapped);
             }
@@ -57,7 +60,7 @@ const JobPostsManagement: React.FC = () => {
         try {
             const { error } = await supabase
                 .from('jobs')
-                .update({ status: 'Approved' })
+                .update({ status_id: 2 }) // 2 = Approved
                 .eq('id', job.id);
             
             if (error) throw error;
@@ -73,7 +76,7 @@ const JobPostsManagement: React.FC = () => {
         try {
             const { error } = await supabase
                 .from('jobs')
-                .update({ status: 'Rejected' })
+                .update({ status_id: 3 }) // 3 = Rejected
                 .eq('id', job.id);
             
             if (error) throw error;
@@ -125,6 +128,13 @@ const JobPostsManagement: React.FC = () => {
             key: 'status',
             label: 'Status',
             render: (job: any) => <StatusBadge variant={job.status} />,
+        },
+        {
+            key: 'applicationCount',
+            label: 'Apps',
+            render: (job: any) => (
+                <span className="font-semibold text-primary-600">{job.applicationCount}</span>
+            ),
         },
         {
             key: 'datePosted',
