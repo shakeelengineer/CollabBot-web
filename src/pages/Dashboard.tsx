@@ -275,10 +275,6 @@ const Dashboard: React.FC = () => {
                     <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
                     <p className="text-gray-600 mt-1">Welcome back! Here's what's happening today.</p>
                 </div>
-                <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-500 text-xs font-medium">
-                    <div className="w-1.5 h-1.5 bg-slate-400 rounded-full"></div>
-                    Job Post feature will Complete Soon INSHALLAH
-                </div>
             </div>
 
             {/* Stats Cards */}
