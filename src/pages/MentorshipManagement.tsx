@@ -22,38 +22,93 @@ const MentorshipManagement: React.FC = () => {
     const fetchMentorships = async () => {
         setLoading(true);
         try {
-            // We'll define "Mentorship" as a Senior/Alumni answering a Junior's question
-            const { data, error } = await supabase
+            // 1. Fetch Q&A Mentorships (Answers)
+            const { data: answersData, error: answersError } = await supabase
                 .from('answers')
                 .select(`
                     id,
                     content,
                     created_at,
                     is_accepted,
-                    author:users!author_id(full_name, role),
+                    author:users!author_id(full_name, role, avatar_url),
                     question:questions!question_id(
                         title,
-                        asker:users!author_id(full_name, role)
+                        asker:users!author_id(full_name, role, avatar_url)
                     )
+
+
+
                 `)
                 .order('created_at', { ascending: false });
 
-            if (error) throw error;
+            if (answersError) throw answersError;
 
-            if (data) {
-                const mapped = data.map(a => ({
-                    id: a.id,
-                    mentor: a.author?.full_name || 'System',
-                    mentee: a.question?.asker?.full_name || 'System',
-                    connectionDate: a.created_at,
-                    lastInteraction: a.created_at,
-                    status: a.is_accepted ? 'Completed' : 'Active',
-                    topic: a.question?.title || 'General Discussion',
-                    mentorRole: a.author?.role,
-                    menteeRole: a.question?.asker?.role
-                }));
-                setMentorships(mapped);
-            }
+            // 2. Fetch Swap Connections (Matches)
+            const { data: matchesData, error: matchesError } = await supabase
+                .from('matches')
+                .select(`
+                    id,
+                    matched_at,
+                    user1:users!user_id(id, full_name, role, avatar_url),
+                    user2:users!matched_user_id(id, full_name, role, avatar_url)
+
+
+
+                `)
+                .order('matched_at', { ascending: false });
+
+
+
+            if (matchesError) throw matchesError;
+
+            // 3. Map and Combine
+            const qas = (answersData || []).map(a => ({
+                id: a.id,
+                type: 'QA Mentorship',
+                mentor: a.author?.full_name || 'System',
+                mentee: a.question?.asker?.full_name || 'System',
+                mentorAvatar: a.author?.avatar_url,
+                menteeAvatar: a.question?.asker?.avatar_url,
+                connectionDate: a.created_at,
+
+
+
+                lastInteraction: a.created_at,
+                status: a.is_accepted ? 'Completed' : 'Active',
+                topic: a.question?.title || 'General Discussion',
+                mentorRole: a.author?.role,
+                menteeRole: a.question?.asker?.role,
+                details: a.content
+            }));
+
+            const swaps = (matchesData || []).map(m => ({
+                id: m.id,
+                type: 'Swap Match',
+                mentor: m.user1?.full_name || 'User A',
+                mentee: m.user2?.full_name || 'User B',
+                mentorId: (m.user1 as any)?.id,
+                menteeId: (m.user2 as any)?.id,
+                mentorAvatar: (m.user1 as any)?.avatar_url,
+                menteeAvatar: (m.user2 as any)?.avatar_url,
+                connectionDate: m.matched_at,
+
+
+
+
+                lastInteraction: m.matched_at,
+                status: 'Active',
+
+                topic: 'Peer Collaboration',
+                mentorRole: m.user1?.role,
+                menteeRole: m.user2?.role,
+                details: 'Connection made via Find Collaborator'
+            }));
+
+            const combined = [...qas, ...swaps].sort((a, b) => 
+                new Date(b.connectionDate).getTime() - new Date(a.connectionDate).getTime()
+            );
+
+            setMentorships(combined);
         } catch (error: any) {
             showToast(error.message || 'Error fetching mentorship data', 'error');
         } finally {
@@ -61,15 +116,30 @@ const MentorshipManagement: React.FC = () => {
         }
     };
 
+
     const handleEndConnection = async (mentorship: any) => {
         if (confirm(`Are you sure you want to end the mentorship session regarding "${mentorship.topic}"? This will remove the recorded interaction.`)) {
             try {
+                const table = mentorship.type === 'Swap Match' ? 'matches' : 'answers';
+                
+                // If it's a Swap Match, we also need to clear swipe_actions so they can match again
+                if (mentorship.type === 'Swap Match' && mentorship.mentorId && mentorship.menteeId) {
+                    await supabase
+                        .from('swipe_actions')
+                        .delete()
+                        .or(`and(actor_id.eq.${mentorship.mentorId},target_id.eq.${mentorship.menteeId}),and(actor_id.eq.${mentorship.menteeId},target_id.eq.${mentorship.mentorId})`);
+                    
+                    console.log('Cleared swipe actions for users:', mentorship.mentorId, mentorship.menteeId);
+                }
+
                 const { error } = await supabase
-                    .from('answers')
+                    .from(table)
                     .delete()
                     .eq('id', mentorship.id);
 
                 if (error) throw error;
+
+
 
                 showToast('Mentorship connection ended successfully', 'success');
                 setIsModalOpen(false);
@@ -83,11 +153,16 @@ const MentorshipManagement: React.FC = () => {
     const columns = [
         {
             key: 'mentor',
+
             label: 'Mentor',
             render: (m: any) => (
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
-                        <span className="text-indigo-700 font-medium">{m.mentor.charAt(0)}</span>
+                    <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center overflow-hidden">
+                        {m.mentorAvatar ? (
+                            <img src={m.mentorAvatar} alt={m.mentor} className="w-full h-full object-cover" />
+                        ) : (
+                            <span className="text-indigo-700 font-medium">{m.mentor.charAt(0)}</span>
+                        )}
                     </div>
                     <div>
                         <p className="font-medium text-gray-900">{m.mentor}</p>
@@ -101,8 +176,12 @@ const MentorshipManagement: React.FC = () => {
             label: 'Mentee',
             render: (m: any) => (
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                        <span className="text-blue-700 font-medium">{m.mentee.charAt(0)}</span>
+                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden">
+                        {m.menteeAvatar ? (
+                            <img src={m.menteeAvatar} alt={m.mentee} className="w-full h-full object-cover" />
+                        ) : (
+                            <span className="text-blue-700 font-medium">{m.mentee.charAt(0)}</span>
+                        )}
                     </div>
                     <div>
                         <p className="font-medium text-gray-900">{m.mentee}</p>
@@ -111,11 +190,24 @@ const MentorshipManagement: React.FC = () => {
                 </div>
             ),
         },
+
+        {
+            key: 'type',
+            label: 'Type',
+            render: (m: any) => (
+                <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
+                    m.type === 'Swap Match' ? 'bg-purple-100 text-purple-700' : 'bg-orange-100 text-orange-700'
+                }`}>
+                    {m.type}
+                </span>
+            )
+        },
         {
             key: 'topic',
             label: 'Topic',
             render: (m: any) => <span className="text-sm text-gray-600 truncate max-w-[150px] inline-block">{m.topic}</span>
         },
+
         {
             key: 'connectionDate',
             label: 'Date',
@@ -165,16 +257,11 @@ const MentorshipManagement: React.FC = () => {
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <StatCard
                     title="Active Sessions"
                     value={mentorships.filter(m => m.status === 'Active').length}
                     icon={UserCheck}
-                />
-                <StatCard
-                    title="Solved Issues"
-                    value={mentorships.filter(m => m.status === 'Completed').length}
-                    icon={CheckCircle}
                 />
                 <StatCard
                     title="Total Interactions"
@@ -182,6 +269,7 @@ const MentorshipManagement: React.FC = () => {
                     icon={ClockIcon}
                 />
             </div>
+
 
             {/* Data Table */}
             <DataTable
@@ -203,10 +291,14 @@ const MentorshipManagement: React.FC = () => {
                     <div className="space-y-4">
                         <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                             <div className="flex items-center gap-4">
-                                <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center">
-                                    <span className="text-2xl text-indigo-700 font-bold">
-                                        {selectedMentorship.mentor.charAt(0)}
-                                    </span>
+                                <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center overflow-hidden">
+                                    {selectedMentorship.mentorAvatar ? (
+                                        <img src={selectedMentorship.mentorAvatar} alt="Mentor" className="w-full h-full object-cover" />
+                                    ) : (
+                                        <span className="text-2xl text-indigo-700 font-bold">
+                                            {selectedMentorship.mentor.charAt(0)}
+                                        </span>
+                                    )}
                                 </div>
                                 <div>
                                     <p className="text-sm text-gray-600">Mentor</p>
@@ -221,13 +313,18 @@ const MentorshipManagement: React.FC = () => {
                                     <p className="text-sm text-gray-600 text-right">Mentee</p>
                                     <p className="font-semibold text-gray-900">{selectedMentorship.mentee}</p>
                                 </div>
-                                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
-                                    <span className="text-2xl text-blue-700 font-bold">
-                                        {selectedMentorship.mentee.charAt(0)}
-                                    </span>
+                                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden">
+                                    {selectedMentorship.menteeAvatar ? (
+                                        <img src={selectedMentorship.menteeAvatar} alt="Mentee" className="w-full h-full object-cover" />
+                                    ) : (
+                                        <span className="text-2xl text-blue-700 font-bold">
+                                            {selectedMentorship.mentee.charAt(0)}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
                         </div>
+
 
                         <div className="grid grid-cols-2 gap-4 pt-4 border-t">
                             <div>
@@ -244,7 +341,14 @@ const MentorshipManagement: React.FC = () => {
                                     <StatusBadge variant={selectedMentorship.status} />
                                 </div>
                             </div>
+                            <div className="col-span-2 pt-2">
+                                <p className="text-sm text-gray-600 font-semibold mb-1">Activity Details</p>
+                                <div className="p-3 bg-gray-50 rounded border border-gray-100 text-sm text-gray-700 italic">
+                                    "{selectedMentorship.details || 'No details available'}"
+                                </div>
+                            </div>
                         </div>
+
 
                         <div className="pt-4 border-t">
                             <h4 className="font-semibold text-gray-900 mb-3">Activity Timeline</h4>
@@ -266,15 +370,15 @@ const MentorshipManagement: React.FC = () => {
 
                         {selectedMentorship.status === 'Active' && (
                             <div className="flex gap-3 pt-4">
-                                <button className="btn-primary flex-1">Send Message</button>
                                 <button
                                     onClick={() => handleEndConnection(selectedMentorship)}
-                                    className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors font-medium flex-1"
+                                    className="bg-red-500 text-white px-4 py-3 rounded-lg hover:bg-red-600 transition-colors font-semibold flex-1 shadow-md hover:shadow-lg active:scale-[0.98] transition-all duration-200"
                                 >
                                     End Connection
                                 </button>
                             </div>
                         )}
+
                     </div>
                 )}
             </Modal>

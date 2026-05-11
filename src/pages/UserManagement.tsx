@@ -47,6 +47,8 @@ const UserManagement: React.FC = () => {
                     joinDate: u.created_at,
                     avatar: u.avatar_url || ''
                 }));
+
+
                 setUsers(mappedUsers);
             }
         } catch (error: any) {

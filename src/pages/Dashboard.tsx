@@ -12,7 +12,9 @@ interface ActivityItem {
     action: string;
     timestamp: string;
     type: 'user' | 'event' | 'question' | 'match';
+    avatar?: string;
 }
+
 
 interface PendingItem {
     id: string;
@@ -125,9 +127,12 @@ const Dashboard: React.FC = () => {
         // Fetch latest 5 users
         const { data: latestUsers } = await supabase
             .from('users')
-            .select('id, full_name, created_at')
+            .select('id, full_name, created_at, avatar_url')
             .order('created_at', { ascending: false })
             .limit(5);
+
+
+
 
         // Fetch latest 5 events
         const { data: latestEvents } = await supabase
@@ -142,17 +147,37 @@ const Dashboard: React.FC = () => {
             .order('created_at', { ascending: false })
             .limit(5);
 
+        // Fetch latest 5 matches (Swap connections)
+        const { data: latestMatches } = await supabase
+            .from('matches')
+            .select(`
+                id,
+                matched_at,
+                user1:users!user_id(full_name, avatar_url),
+                user2:users!matched_user_id(full_name, avatar_url)
+            `)
+            .order('matched_at', { ascending: false })
+            .limit(5);
+
+
+
+
+
         const activities: ActivityItem[] = [];
 
         latestUsers?.forEach(u => {
             activities.push({
                 id: `user-${u.id}`,
                 user: u.full_name,
+                avatar: u.avatar_url,
                 action: 'joined the platform',
                 timestamp: u.created_at,
                 type: 'user'
             });
         });
+
+
+
 
         latestEvents?.forEach(e => {
             activities.push({
@@ -164,9 +189,23 @@ const Dashboard: React.FC = () => {
             });
         });
 
+        latestMatches?.forEach(m => {
+            activities.push({
+                id: `match-${m.id}`,
+                user: (m.user1 as any)?.full_name || 'A user',
+                avatar: (m.user1 as any)?.avatar_url,
+                action: `matched with ${(m.user2 as any)?.full_name || 'someone'}`,
+                timestamp: m.matched_at || '',
+                type: 'match'
+            });
+        });
+
+
+
         setRecentActivity(activities.sort((a, b) => 
             new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
         ).slice(0, 8));
+
     };
 
     const fetchPendingApprovals = async () => {
@@ -378,12 +417,31 @@ const Dashboard: React.FC = () => {
                         {recentActivity.length > 0 ? (
                             recentActivity.map((activity) => (
                                 <div key={activity.id} className="flex items-start gap-4">
-                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                                        activity.type === 'user' ? 'bg-blue-50 text-blue-500' : 
-                                        activity.type === 'event' ? 'bg-purple-50 text-purple-500' : 'bg-gray-50 text-gray-500'
-                                    }`}>
-                                        {activity.type === 'user' ? <Users size={18} /> : <Calendar size={18} />}
+                                    <div className="relative flex-shrink-0">
+                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center overflow-hidden border-2 ${
+                                            activity.type === 'user' ? 'border-blue-100 bg-blue-50 text-blue-500' : 
+                                            activity.type === 'event' ? 'border-purple-100 bg-purple-50 text-purple-500' : 
+                                            activity.type === 'match' ? 'border-green-100 bg-green-50 text-green-500' : 'bg-gray-50 text-gray-500'
+                                        }`}>
+                                            {activity.avatar ? (
+                                                <img src={activity.avatar} alt="" className="w-full h-full object-cover" />
+                                            ) : (
+                                                activity.type === 'user' ? <Users size={18} /> : 
+                                                activity.type === 'event' ? <Calendar size={18} /> : <UserCheck size={18} />
+                                            )}
+                                        </div>
+                                        {/* Type badge overlay */}
+                                        <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-white flex items-center justify-center ${
+                                            activity.type === 'user' ? 'bg-blue-500' : 
+                                            activity.type === 'event' ? 'bg-purple-500' : 
+                                            activity.type === 'match' ? 'bg-green-500' : 'bg-gray-500'
+                                        }`}>
+                                            {activity.type === 'user' ? <Users size={10} className="text-white" /> : 
+                                             activity.type === 'event' ? <Calendar size={10} className="text-white" /> : <UserCheck size={10} className="text-white" />}
+                                        </div>
                                     </div>
+
+
                                     <div className="flex-1 min-w-0">
                                         <p className="text-sm text-gray-900">
                                             <span className="font-medium">{activity.user}</span> {activity.action}
