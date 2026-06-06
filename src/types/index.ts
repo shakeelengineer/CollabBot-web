@@ -20,10 +20,9 @@ export interface JobPost {
     id: string;
     title: string;
     postedBy: string;
-    company: string;
+    job_url: string;
     status: JobStatus;
     datePosted: string;
-    description: string;
 }
 
 export interface Report {

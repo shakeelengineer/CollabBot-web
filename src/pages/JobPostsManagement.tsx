@@ -41,7 +41,6 @@ const JobPostsManagement: React.FC = () => {
                     postedBy: j.poster?.full_name || 'System',
                     datePosted: j.created_at,
                     status: j.status_info?.name || 'Pending',
-                    applicationCount: j.applications?.[0]?.count || 0
                 }));
                 setJobs(mapped);
             }
@@ -112,7 +111,7 @@ const JobPostsManagement: React.FC = () => {
             render: (job: any) => (
                 <div>
                     <p className="font-medium text-gray-900">{job.title}</p>
-                    <p className="text-xs text-gray-500">{job.company}</p>
+                    <a href={job.job_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline">{job.job_url}</a>
                 </div>
             ),
         },
@@ -121,20 +120,9 @@ const JobPostsManagement: React.FC = () => {
             label: 'Posted By',
         },
         {
-            key: 'company',
-            label: 'Company',
-        },
-        {
             key: 'status',
             label: 'Status',
             render: (job: any) => <StatusBadge variant={job.status} />,
-        },
-        {
-            key: 'applicationCount',
-            label: 'Apps',
-            render: (job: any) => (
-                <span className="font-semibold text-primary-600">{job.applicationCount}</span>
-            ),
         },
         {
             key: 'datePosted',
@@ -265,7 +253,7 @@ const JobPostsManagement: React.FC = () => {
                     <div className="space-y-4">
                         <div>
                             <h3 className="text-2xl font-bold text-gray-900">{selectedJob.title}</h3>
-                            <p className="text-lg text-gray-600 mt-1">{selectedJob.company}</p>
+                            <a href={selectedJob.job_url} target="_blank" rel="noopener noreferrer" className="text-lg text-blue-500 hover:underline mt-1">{selectedJob.job_url}</a>
                             <div className="flex gap-2 mt-3">
                                 <StatusBadge variant={selectedJob.status} />
                             </div>
@@ -280,11 +268,6 @@ const JobPostsManagement: React.FC = () => {
                                 <p className="text-sm text-gray-600">Date Posted</p>
                                 <p className="font-medium text-gray-900">{formatDate(selectedJob.datePosted)}</p>
                             </div>
-                        </div>
-
-                        <div className="pt-4 border-t">
-                            <p className="text-sm text-gray-600 mb-2">Description</p>
-                            <p className="text-gray-900">{selectedJob.description}</p>
                         </div>
 
                         {selectedJob.status === 'Pending' && (
