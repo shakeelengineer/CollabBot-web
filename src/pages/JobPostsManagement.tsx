@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Loader2, Eye, Check, X, Trash2 } from 'lucide-react';
+import { RefreshCw, Eye, Check, X, Trash2, ExternalLink } from 'lucide-react';
 import DataTable from '@/components/DataTable';
 import StatusBadge from '@/components/StatusBadge';
 import Modal from '@/components/Modal';
@@ -111,7 +111,15 @@ const JobPostsManagement: React.FC = () => {
             render: (job: any) => (
                 <div>
                     <p className="font-medium text-gray-900">{job.title}</p>
-                    <a href={job.job_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline">{job.job_url}</a>
+                    <a
+                        href={job.job_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 mt-1 text-xs font-medium text-primary-600 bg-primary-50 border border-primary-200 px-2 py-1 rounded-full hover:bg-primary-100 transition-colors"
+                    >
+                        <ExternalLink className="w-3 h-3" />
+                        Visit Job Site
+                    </a>
                 </div>
             ),
         },
@@ -253,10 +261,20 @@ const JobPostsManagement: React.FC = () => {
                     <div className="space-y-4">
                         <div>
                             <h3 className="text-2xl font-bold text-gray-900">{selectedJob.title}</h3>
-                            <a href={selectedJob.job_url} target="_blank" rel="noopener noreferrer" className="text-lg text-blue-500 hover:underline mt-1">{selectedJob.job_url}</a>
                             <div className="flex gap-2 mt-3">
                                 <StatusBadge variant={selectedJob.status} />
                             </div>
+                            {selectedJob.job_url && (
+                                <a
+                                    href={selectedJob.job_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors"
+                                >
+                                    <ExternalLink className="w-4 h-4" />
+                                    Visit Job Site
+                                </a>
+                            )}
                         </div>
 
                         <div className="grid grid-cols-2 gap-4 pt-4 border-t">
