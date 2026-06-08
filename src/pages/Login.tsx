@@ -34,12 +34,7 @@ const Login: React.FC = () => {
 
             if (profileError || !profile) {
                 await supabase.auth.signOut();
-                // This means the user exists in auth but not in public.users table
-                // The UUID in public.users must match the auth user UUID
-                showToast(
-                    'Profile not found in database. Please ensure the user record exists in the users table with the correct ID.',
-                    'error'
-                );
+                showToast('User profile not found', 'error');
                 return;
             }
 
