@@ -24,7 +24,8 @@ const menuItems = [
     { icon: Briefcase, label: 'Job Posts', path: '/jobs' },
     { icon: Flag, label: 'Reports', path: '/reports' },
     { icon: Calendar, label: 'Events', path: '/events' },
-    { icon: Users2, label: 'Mentorships', path: '/mentorships' },
+    { icon: Users2, label: 'Mentorship Activity', path: '/mentorships' },
+
     { icon: Settings, label: 'Settings', path: '/settings' },
 ];
 
