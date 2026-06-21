@@ -1,34 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { User, Bell, Shield, Save, Upload, Loader2 } from 'lucide-react';
+import { User, Save, Upload, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import { supabase } from '@/lib/supabase';
 
 const Settings: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security'>('profile');
+    const [activeTab, setActiveTab] = useState<'profile'>('profile');
     const { showToast } = useToast();
     const [profileData, setProfileData] = useState({ full_name: '', email: '', phone: '', bio: '', avatar_url: '' });
     const [loadingProfile, setLoadingProfile] = useState(true);
     const [uploading, setUploading] = useState(false);
-    const [notifications, setNotifications] = useState({
-        email: true,
-        push: true,
-        newUsers: true,
-        pendingApprovals: true,
-        reports: true
-    });
-    const [security, setSecurity] = useState({
-        twoFactor: false,
-        loginAlerts: true
-    });
 
     useEffect(() => {
         fetchProfile();
-        // Load settings from localStorage
-        const savedNotifications = localStorage.getItem('admin_notifications');
-        if (savedNotifications) setNotifications(JSON.parse(savedNotifications));
-        
-        const savedSecurity = localStorage.getItem('admin_security');
-        if (savedSecurity) setSecurity(JSON.parse(savedSecurity));
     }, []);
 
     const fetchProfile = async () => {
@@ -115,25 +98,6 @@ const Settings: React.FC = () => {
         }
     };
 
-    const handleSaveNotifications = (e: React.FormEvent) => {
-        e.preventDefault();
-        localStorage.setItem('admin_notifications', JSON.stringify(notifications));
-        showToast('Notification preferences saved successfully', 'success');
-    };
-
-    const handleSecurityToggle = (key: 'twoFactor' | 'loginAlerts') => {
-        const newValue = !security[key];
-        const newSecurity = { ...security, [key]: newValue };
-        setSecurity(newSecurity);
-        localStorage.setItem('admin_security', JSON.stringify(newSecurity));
-        showToast(`${key === 'twoFactor' ? 'Two-Factor' : 'Login Alerts'} ${newValue ? 'enabled' : 'disabled'} real-time`, 'success');
-    };
-
-    const handleChangePassword = (e: React.FormEvent) => {
-        e.preventDefault();
-        showToast('Password reset request sent to your email', 'success');
-    };
-
     return (
         <div className="space-y-6">
             {/* Page Header */}
@@ -155,26 +119,6 @@ const Settings: React.FC = () => {
                         >
                             <User className="w-5 h-5" />
                             <span className="font-medium">Profile</span>
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('notifications')}
-                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'notifications'
-                                    ? 'bg-primary-50 text-primary-700'
-                                    : 'text-gray-700 hover:bg-gray-50'
-                                }`}
-                        >
-                            <Bell className="w-5 h-5" />
-                            <span className="font-medium">Notifications</span>
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('security')}
-                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'security'
-                                    ? 'bg-primary-50 text-primary-700'
-                                    : 'text-gray-700 hover:bg-gray-50'
-                                }`}
-                        >
-                            <Shield className="w-5 h-5" />
-                            <span className="font-medium">Security</span>
                         </button>
                     </div>
                 </div>
@@ -276,162 +220,6 @@ const Settings: React.FC = () => {
                                     <button type="submit" className="btn-primary flex items-center gap-2">
                                         <Save className="w-4 h-4" />
                                         Save Changes
-                                    </button>
-                                </div>
-                            </form>
-                        )}
-
-                        {/* Notifications Tab */}
-                        {activeTab === 'notifications' && (
-                            <form onSubmit={handleSaveNotifications} className="space-y-6">
-                                <div>
-                                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Notification Preferences</h2>
-                                    <p className="text-sm text-gray-600 mb-6">Manage how you receive notifications</p>
-                                </div>
-
-                                <div className="space-y-4">
-                                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                                        <div>
-                                            <p className="font-medium text-gray-900">Email Notifications</p>
-                                            <p className="text-sm text-gray-600">Receive email updates about platform activity</p>
-                                        </div>
-                                        <label className="relative inline-flex items-center cursor-pointer">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={notifications.email} 
-                                                onChange={() => setNotifications({ ...notifications, email: !notifications.email })}
-                                                className="sr-only peer" 
-                                            />
-                                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
-                                        </label>
-                                    </div>
-
-                                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                                        <div>
-                                            <p className="font-medium text-gray-900">Push Notifications</p>
-                                            <p className="text-sm text-gray-600">Receive push notifications on your device</p>
-                                        </div>
-                                        <label className="relative inline-flex items-center cursor-pointer">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={notifications.push}
-                                                onChange={() => setNotifications({ ...notifications, push: !notifications.push })}
-                                                className="sr-only peer" 
-                                            />
-                                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
-                                        </label>
-                                    </div>
-
-                                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                                        <div>
-                                            <p className="font-medium text-gray-900">New User Registrations</p>
-                                            <p className="text-sm text-gray-600">Get notified when new users join</p>
-                                        </div>
-                                        <label className="relative inline-flex items-center cursor-pointer">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={notifications.newUsers}
-                                                onChange={() => setNotifications({ ...notifications, newUsers: !notifications.newUsers })}
-                                                className="sr-only peer" 
-                                            />
-                                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
-                                        </label>
-                                    </div>
-
-                                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                                        <div>
-                                            <p className="font-medium text-gray-900">Pending Approvals</p>
-                                            <p className="text-sm text-gray-600">Alerts for items requiring approval</p>
-                                        </div>
-                                        <label className="relative inline-flex items-center cursor-pointer">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={notifications.pendingApprovals}
-                                                onChange={() => setNotifications({ ...notifications, pendingApprovals: !notifications.pendingApprovals })}
-                                                className="sr-only peer" 
-                                            />
-                                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
-                                        </label>
-                                    </div>
-
-                                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                                        <div>
-                                            <p className="font-medium text-gray-900">Reports & Complaints</p>
-                                            <p className="text-sm text-gray-600">Notifications for new reports</p>
-                                        </div>
-                                        <label className="relative inline-flex items-center cursor-pointer">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={notifications.reports}
-                                                onChange={() => setNotifications({ ...notifications, reports: !notifications.reports })}
-                                                className="sr-only peer" 
-                                            />
-                                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
-                                        </label>
-                                    </div>
-                                </div>
-
-                                <div className="flex justify-end pt-4 border-t">
-                                    <button type="submit" className="btn-primary flex items-center gap-2">
-                                        <Save className="w-4 h-4" />
-                                        Save Preferences
-                                    </button>
-                                </div>
-                            </form>
-                        )}
-
-                        {/* Security Tab */}
-                        {activeTab === 'security' && (
-                            <form onSubmit={handleChangePassword} className="space-y-6">
-                                <div>
-                                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Security Settings</h2>
-                                    <p className="text-sm text-gray-600 mb-6">Manage your account security</p>
-                                </div>
-
-                                <div className="space-y-4">
-                                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                                        <div>
-                                            <p className="font-medium text-gray-900">Login Alerts</p>
-                                            <p className="text-sm text-gray-600">Get notified when your account is logged in from a new device</p>
-                                        </div>
-                                        <label className="relative inline-flex items-center cursor-pointer">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={security.loginAlerts}
-                                                onChange={() => handleSecurityToggle('loginAlerts')}
-                                                className="sr-only peer" 
-                                            />
-                                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
-                                        </label>
-                                    </div>
-
-                                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                                        <div>
-                                            <p className="font-medium text-gray-900">Two-Factor Authentication</p>
-                                            <p className="text-sm text-gray-600">Add an extra layer of security to your account</p>
-                                        </div>
-                                        <label className="relative inline-flex items-center cursor-pointer">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={security.twoFactor}
-                                                onChange={() => handleSecurityToggle('twoFactor')}
-                                                className="sr-only peer" 
-                                            />
-                                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
-                                        </label>
-                                    </div>
-
-                                    <hr className="my-6 border-gray-100" />
-                                    
-                                    <h3 className="text-lg font-medium text-gray-900 mb-4">Change Password</h3>
-                                    <p className="text-sm text-gray-600 mb-4">We will send a reset link to your email address.</p>
-                                    
-                                    <button 
-                                        type="submit" 
-                                        className="btn-primary flex items-center gap-2"
-                                    >
-                                        <Save className="w-4 h-4" />
-                                        Request Password Reset
                                     </button>
                                 </div>
                             </form>
